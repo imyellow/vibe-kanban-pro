@@ -24,12 +24,17 @@ pub struct DiffSummary {
     pub lines_removed: usize,
 }
 
-/// Truncate text to a maximum length
-fn truncate_text(text: &str, max_chars: usize) -> String {
-    if text.len() <= max_chars {
+/// Truncate text to a maximum length (UTF-8 safe)
+fn truncate_text(text: &str, max_bytes: usize) -> String {
+    if text.len() <= max_bytes {
         text.to_string()
     } else {
-        format!("{}\n... [truncated]", &text[..max_chars])
+        // Find a valid UTF-8 character boundary
+        let mut end = max_bytes;
+        while end > 0 && !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}\n... [truncated]", &text[..end])
     }
 }
 
