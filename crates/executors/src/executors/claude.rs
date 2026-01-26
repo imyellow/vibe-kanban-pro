@@ -134,12 +134,7 @@ impl ClaudeCode {
                 let settings_json = serde_json::json!({
                     "env": profile_env
                 });
-                let settings_str = settings_json.to_string();
-                tracing::info!(
-                    "build_command_builder: adding --setting-sources=project and --settings with env: {}",
-                    settings_str
-                );
-                builder = builder.extend_params(["--settings", &settings_str]);
+                builder = builder.extend_params(["--settings", &settings_json.to_string()]);
             }
         }
 
@@ -211,11 +206,6 @@ impl StandardCodingAgentExecutor for ClaudeCode {
         prompt: &str,
         env: &ExecutionEnv,
     ) -> Result<SpawnedChild, ExecutorError> {
-        tracing::info!(
-            "ClaudeCode::spawn: current_dir={:?}, self.cmd.env={:?}",
-            current_dir,
-            self.cmd.env
-        );
         let command_builder = self.build_command_builder().await?;
         let command_parts = command_builder.build_initial()?;
         self.spawn_internal(current_dir, prompt, command_parts, env)
@@ -316,20 +306,6 @@ impl ClaudeCode {
         let (program_path, args) = command_parts.into_resolved().await?;
         let combined_prompt = self.append_prompt.combine_prompt(prompt);
 
-        tracing::info!(
-            "ClaudeCode::spawn_internal: program={:?}, args={:?}",
-            program_path,
-            args
-        );
-        tracing::info!(
-            "ClaudeCode::spawn_internal: self.cmd.env={:?}",
-            self.cmd.env
-        );
-        tracing::info!(
-            "ClaudeCode::spawn_internal: env.vars before with_profile={:?}",
-            env.vars
-        );
-
         let mut command = Command::new(&program_path);
         command
             .kill_on_drop(true)
@@ -340,24 +316,31 @@ impl ClaudeCode {
             .env("NPM_CONFIG_LOGLEVEL", "error")
             .args(&args);
 
-        let final_env = env.clone().with_profile(&self.cmd);
-        tracing::info!(
-            "ClaudeCode::spawn_internal: env.vars after with_profile={:?}",
-            final_env.vars
-        );
-        final_env.apply_to_command(&mut command);
+        env.clone()
+            .with_profile(&self.cmd)
+            .apply_to_command(&mut command);
 
         // Remove ANTHROPIC_API_KEY if disable_api_key is enabled
         if self.disable_api_key.unwrap_or(false) {
             command.env_remove("ANTHROPIC_API_KEY");
-            tracing::info!("ANTHROPIC_API_KEY removed from environment");
         }
 
-        tracing::info!(
-            "ClaudeCode::spawn_internal: FINAL COMMAND: {:?} {:?}",
-            program_path,
-            args.join(" ")
+        // Log the full command being executed
+        let full_command = format!(
+            "{} {}",
+            program_path.display(),
+            args.iter()
+                .map(|a| {
+                    if a.contains(' ') || a.contains('"') {
+                        format!("'{}'", a)
+                    } else {
+                        a.clone()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
         );
+        tracing::info!("Spawning Claude Code agent: {}", full_command);
 
         let mut child = command.group_spawn()?;
         let child_stdout = child.inner().stdout.take().ok_or_else(|| {
