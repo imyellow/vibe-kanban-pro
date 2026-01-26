@@ -1061,6 +1061,26 @@ impl GitService {
         Ok(oid)
     }
 
+    pub fn amend_commit_message(
+        &self,
+        worktree_path: &Path,
+        message: &str,
+    ) -> Result<(), GitServiceError> {
+        let git_cli = GitCli::new();
+        if git_cli.has_staged_changes(worktree_path)? {
+            let branch_name = self
+                .get_head_info(worktree_path)
+                .map(|info| info.branch)
+                .unwrap_or_else(|_| "unknown branch".to_string());
+            return Err(GitServiceError::WorktreeDirty(
+                branch_name,
+                "staged changes present".to_string(),
+            ));
+        }
+        git_cli.amend_commit_message(worktree_path, message)?;
+        Ok(())
+    }
+
     pub fn get_fork_point(
         &self,
         worktree_path: &Path,

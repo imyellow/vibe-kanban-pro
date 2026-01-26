@@ -342,6 +342,16 @@ impl GitCli {
         self.git(worktree_path, ["commit", "-m", message])?;
         Ok(())
     }
+
+    /// Amend the latest commit message without changing the tree.
+    pub fn amend_commit_message(
+        &self,
+        worktree_path: &Path,
+        message: &str,
+    ) -> Result<(), GitCliError> {
+        self.git(worktree_path, ["commit", "--amend", "-m", message])?;
+        Ok(())
+    }
     /// Fetch a branch to the given remote using native git authentication.
     pub fn fetch_with_refspec(
         &self,

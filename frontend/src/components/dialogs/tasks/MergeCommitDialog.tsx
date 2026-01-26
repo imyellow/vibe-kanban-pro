@@ -103,21 +103,25 @@ const buildPrompt = ({
   const branch = targetBranch?.trim() || 'unknown';
 
   return [
-    'You are a Git commit message generator.',
-    'Generate the merge commit message for the target branch based on the task info and diff context.',
+    '你是一个 Git 提交信息生成器。',
+    '请生成中文的标准 Git commit message（用于合并到目标分支）。',
     '',
-    'Requirements:',
-    '- Output 1-3 lines. The first line is a concise title (<= 72 chars).',
-    '- If a body is needed, leave a blank line before it.',
-    '- Match the language used in the task title when possible.',
-    '- Output only the commit message text. No extra commentary or code fences.',
+    '规则：',
+    '- 只输出提交信息本体，不要附加解释、编号或代码块。',
+    '- 第一行使用 Conventional Commits 格式，例如：',
+    '  fix(ui): 修复按钮点击无响应问题',
+    '  docs: 更新API接口文档',
+    '  refactor(core): 重构登录模块代码结构',
+    '- 第一行尽量简洁（<= 72 字符）。',
+    '- 如需正文，第二行留空，从第三行开始写 1-3 句中文说明（可用整句，不强制列表）。',
+    '- 重点说明“改了什么、为什么改”。避免泛泛的“更新文件/合并分支”。',
     '',
-    `Task title: ${title}`,
-    `Task description: ${description}`,
-    `Target branch: ${branch}`,
-    `Diff summary: ${diffSummary.filesChanged} files, +${diffSummary.linesAdded} / -${diffSummary.linesRemoved} lines`,
+    `任务标题：${title}`,
+    `任务描述：${description}`,
+    `目标分支：${branch}`,
+    `变更概要：文件 ${diffSummary.filesChanged} 个，新增 ${diffSummary.linesAdded} 行，删除 ${diffSummary.linesRemoved} 行`,
     '',
-    'Diff content is attached as a file.',
+    '变更内容在下方 diff 中。',
   ].join('\n');
 };
 

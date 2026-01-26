@@ -34,13 +34,11 @@ use db::models::{
     workspace_repo::{CreateWorkspaceRepo, RepoWithTargetBranch, WorkspaceRepo},
 };
 use deployment::Deployment;
-use tokio::{fs, process::Command};
 use executors::{
     actions::{
         ExecutorAction, ExecutorActionType,
         script::{ScriptContext, ScriptRequest, ScriptRequestLanguage},
     },
-    command::CommandBuilder,
     executors::{CodingAgent, ExecutorError},
     profile::{ExecutorConfigs, ExecutorProfileId},
 };
@@ -49,11 +47,12 @@ use serde::{Deserialize, Serialize};
 use services::services::{
     container::ContainerService,
     file_search::SearchQuery,
-    git::{ConflictOp, GitCliError, GitServiceError},
+    git::{ConflictOp, DiffTarget, GitCliError, GitServiceError},
     workspace_manager::WorkspaceManager,
 };
 use sqlx::Error as SqlxError;
 use ts_rs::TS;
+use utils::diff::Diff;
 use utils::response::ApiResponse;
 use uuid::Uuid;
 
@@ -430,6 +429,214 @@ pub struct GenerateMergeCommitMessageResponse {
     pub message: String,
 }
 
+const MAX_DIFF_CONTEXT_CHARS: usize = 12000;
+const MAX_FILE_CONTENT_CHARS: usize = 2000;
+
+struct DiffSummary {
+    files_changed: usize,
+    lines_added: usize,
+    lines_removed: usize,
+}
+
+fn truncate_text(value: &str, limit: usize) -> String {
+    if value.chars().count() <= limit {
+        return value.to_string();
+    }
+    let truncated: String = value.chars().take(limit).collect();
+    format!("{truncated}\n... [truncated]")
+}
+
+fn summarize_diffs(diffs: &[Diff]) -> DiffSummary {
+    let mut summary = DiffSummary {
+        files_changed: 0,
+        lines_added: 0,
+        lines_removed: 0,
+    };
+    for diff in diffs {
+        summary.files_changed += 1;
+        summary.lines_added += diff.additions.unwrap_or(0) as usize;
+        summary.lines_removed += diff.deletions.unwrap_or(0) as usize;
+    }
+    summary
+}
+
+fn build_diff_context(diffs: &[Diff]) -> String {
+    if diffs.is_empty() {
+        return String::new();
+    }
+
+    let mut sections: Vec<String> = Vec::new();
+    let mut total_chars = 0usize;
+
+    for diff in diffs {
+        let path = diff
+            .new_path
+            .as_deref()
+            .or(diff.old_path.as_deref())
+            .unwrap_or("unknown");
+        let mut section = format!("File: {}\nChange: {:?}\n", path, diff.change);
+
+        if diff.content_omitted {
+            section.push_str(&format!(
+                "Content omitted. Additions: {}, Deletions: {}\n",
+                diff.additions.unwrap_or(0),
+                diff.deletions.unwrap_or(0)
+            ));
+        } else {
+            if let Some(old_content) = diff.old_content.as_deref() {
+                section.push_str("--- Old\n");
+                section.push_str(&truncate_text(old_content, MAX_FILE_CONTENT_CHARS));
+                section.push('\n');
+            }
+            if let Some(new_content) = diff.new_content.as_deref() {
+                section.push_str("--- New\n");
+                section.push_str(&truncate_text(new_content, MAX_FILE_CONTENT_CHARS));
+                section.push('\n');
+            }
+        }
+
+        section.push('\n');
+
+        if total_chars + section.len() > MAX_DIFF_CONTEXT_CHARS {
+            sections.push("... diff context truncated ...".to_string());
+            break;
+        }
+
+        total_chars += section.len();
+        sections.push(section);
+    }
+
+    sections.join("\n")
+}
+
+fn build_branch_commit_prompt(
+    task: &Task,
+    target_branch: &str,
+    summary: &DiffSummary,
+    diff_context: &str,
+) -> String {
+    let title = task.title.trim();
+    let description = task
+        .description
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+
+    let mut prompt = String::from(
+        "You are a Git commit message generator.\n\
+Output a standard Conventional Commits message in Chinese.\n\n\
+Rules:\n\
+- Output commit message text only.\n\
+- First line format: type(scope): summary OR type: summary.\n\
+- Use Chinese for summary and body.\n\
+- First line should be concise (<= 72 chars).\n\
+- If a body is needed, add a blank line and 1-3 sentences.\n\
+- Explain what changed and why. Avoid generic lines.\n\n",
+    );
+
+    prompt.push_str(&format!("Task title: {title}\n"));
+    if !description.is_empty() {
+        prompt.push_str(&format!("Task description: {description}\n"));
+    }
+    prompt.push_str(&format!("Target branch: {target_branch}\n"));
+    prompt.push_str(&format!(
+        "Diff summary: {} files, +{} / -{} lines\n\n",
+        summary.files_changed, summary.lines_added, summary.lines_removed
+    ));
+
+    if !diff_context.trim().is_empty() {
+        prompt.push_str("Diff context:\n");
+        prompt.push_str(diff_context.trim());
+        prompt.push('\n');
+    }
+
+    prompt
+}
+
+async fn deepseek_generate_commit_message(prompt: &str) -> Result<String, ApiError> {
+    #[derive(Serialize)]
+    struct DeepseekMessage {
+        role: String,
+        content: String,
+    }
+
+    #[derive(Serialize)]
+    struct DeepseekRequest {
+        model: String,
+        messages: Vec<DeepseekMessage>,
+        temperature: f32,
+        max_tokens: u32,
+    }
+
+    #[derive(Deserialize)]
+    struct DeepseekResponse {
+        choices: Vec<DeepseekChoice>,
+    }
+
+    #[derive(Deserialize)]
+    struct DeepseekChoice {
+        message: DeepseekResponseMessage,
+    }
+
+    #[derive(Deserialize)]
+    struct DeepseekResponseMessage {
+        content: String,
+    }
+
+    let api_key = std::env::var("DEEPSEEK_API_KEY").map_err(|_| {
+        ApiError::BadRequest("DEEPSEEK_API_KEY is not set".to_string())
+    })?;
+
+    let payload = DeepseekRequest {
+        model: "deepseek-chat".to_string(),
+        messages: vec![
+            DeepseekMessage {
+                role: "system".to_string(),
+                content: "You generate high-quality Git commit messages.".to_string(),
+            },
+            DeepseekMessage {
+                role: "user".to_string(),
+                content: prompt.to_string(),
+            },
+        ],
+        temperature: 0.2,
+        max_tokens: 240,
+    };
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post("https://api.deepseek.com/v1/chat/completions")
+        .bearer_auth(api_key)
+        .json(&payload)
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(ApiError::BadRequest(format!(
+            "DeepSeek API error: {} {}",
+            status.as_u16(),
+            body.trim()
+        )));
+    }
+
+    let data: DeepseekResponse = response.json().await?;
+    let message = data
+        .choices
+        .first()
+        .map(|choice| choice.message.content.trim().to_string())
+        .unwrap_or_default();
+    if message.is_empty() {
+        return Err(ApiError::BadRequest(
+            "DeepSeek returned empty output".to_string(),
+        ));
+    }
+
+    Ok(message)
+}
+
 #[derive(Debug, Deserialize, Serialize, TS)]
 pub struct PushTaskAttemptRequest {
     pub repo_id: Uuid,
@@ -503,6 +710,24 @@ pub async fn merge_task_attempt(
         msg
     };
 
+    let diffs = deployment.git().get_diffs(DiffTarget::Branch {
+        repo_path: &repo.path,
+        branch_name: &workspace.branch,
+        base_branch: &workspace_repo.target_branch,
+    }, None)?;
+    let diff_summary = summarize_diffs(&diffs);
+    let diff_context = build_diff_context(&diffs);
+    let branch_prompt = build_branch_commit_prompt(
+        &task,
+        &workspace_repo.target_branch,
+        &diff_summary,
+        &diff_context,
+    );
+    let branch_commit_message = deepseek_generate_commit_message(&branch_prompt).await?;
+    deployment
+        .git()
+        .amend_commit_message(&worktree_path, &branch_commit_message)?;
+
     let merge_commit_id = deployment.git().merge_changes(
         &repo.path,
         &worktree_path,
@@ -568,70 +793,28 @@ pub async fn generate_merge_commit_message(
     State(_deployment): State<DeploymentImpl>,
     Json(request): Json<GenerateMergeCommitMessageRequest>,
 ) -> Result<ResponseJson<ApiResponse<GenerateMergeCommitMessageResponse>>, ApiError> {
-    let diff_context = request.diff_context.unwrap_or_default();
-    let mut diff_file_path = None;
+    if request.prompt.trim().is_empty() {
+        return Err(ApiError::BadRequest(
+            "Prompt cannot be empty".to_string(),
+        ));
+    }
 
+    let mut prompt = request.prompt.trim().to_string();
+    let mut diff_context = request.diff_context.unwrap_or_default();
+    if diff_context.len() > MAX_DIFF_CONTEXT_CHARS {
+        diff_context.truncate(MAX_DIFF_CONTEXT_CHARS);
+        diff_context.push_str("\n... [diff truncated]");
+    }
     if !diff_context.trim().is_empty() {
-        let file_path = std::env::temp_dir()
-            .join(format!("vibe-kanban-merge-diff-{}.txt", Uuid::new_v4()));
-        fs::write(&file_path, diff_context).await?;
-        diff_file_path = Some(file_path);
+        prompt.push_str("\n\nDiff context:\n");
+        prompt.push_str(diff_context.trim());
     }
 
-    let result: Result<ResponseJson<ApiResponse<GenerateMergeCommitMessageResponse>>, ApiError> =
-        async {
-            if request.prompt.trim().is_empty() {
-                return Err(ApiError::BadRequest(
-                    "Prompt cannot be empty".to_string(),
-                ));
-            }
+    let message = deepseek_generate_commit_message(&prompt).await?;
 
-            let mut command_builder = CommandBuilder::new("npx -y opencode-ai@1.1.25")
-                .extend_params(["run", "--format", "default"]);
-
-            if let Some(path) = diff_file_path.as_ref() {
-                let path_str = path.to_string_lossy().to_string();
-                command_builder = command_builder.extend_params(["--file", &path_str]);
-            }
-
-            let command_parts = command_builder.build_initial()?;
-            let (program_path, args) = command_parts.into_resolved().await?;
-
-            let output = Command::new(program_path)
-                .args(args)
-                .arg(&request.prompt)
-                .env("NPM_CONFIG_LOGLEVEL", "error")
-                .env("NODE_NO_WARNINGS", "1")
-                .env("NO_COLOR", "1")
-                .output()
-                .await?;
-
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(ApiError::BadRequest(format!(
-                    "opencode run failed: {}",
-                    stderr.trim()
-                )));
-            }
-
-            let message = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if message.is_empty() {
-                return Err(ApiError::BadRequest(
-                    "opencode run returned empty output".to_string(),
-                ));
-            }
-
-            Ok(ResponseJson(ApiResponse::success(
-                GenerateMergeCommitMessageResponse { message },
-            )))
-        }
-        .await;
-
-    if let Some(path) = diff_file_path {
-        let _ = fs::remove_file(path).await;
-    }
-
-    result
+    Ok(ResponseJson(ApiResponse::success(
+        GenerateMergeCommitMessageResponse { message },
+    )))
 }
 
 pub async fn push_task_attempt_branch(

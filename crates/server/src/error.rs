@@ -13,6 +13,7 @@ use deployment::{DeploymentError, RemoteClientNotConfigured};
 use executors::{command::CommandBuildError, executors::ExecutorError};
 use git2::Error as Git2Error;
 use local_deployment::pty::PtyError;
+use reqwest::Error as ReqwestError;
 use services::services::{
     config::{ConfigError, EditorOpenError},
     container::ContainerError,
@@ -68,6 +69,8 @@ pub enum ApiError {
     EditorOpen(#[from] EditorOpenError),
     #[error(transparent)]
     RemoteClient(#[from] RemoteClientError),
+    #[error(transparent)]
+    Http(#[from] ReqwestError),
     #[error("Unauthorized")]
     Unauthorized,
     #[error("Bad request: {0}")]
@@ -178,6 +181,7 @@ impl IntoResponse for ApiError {
                     (StatusCode::BAD_REQUEST, "RemoteClientError")
                 }
             },
+            ApiError::Http(_) => (StatusCode::BAD_GATEWAY, "HttpError"),
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized"),
             ApiError::BadRequest(_) => (StatusCode::BAD_REQUEST, "BadRequest"),
             ApiError::Conflict(_) => (StatusCode::CONFLICT, "ConflictError"),
@@ -261,6 +265,7 @@ impl IntoResponse for ApiError {
                 RemoteClientError::Serde(_) => "Unexpected response from remote service.".to_string(),
                 RemoteClientError::Url(_) => "Remote service URL is invalid.".to_string(),
             },
+            ApiError::Http(_) => "HTTP request failed. Please try again.".to_string(),
             ApiError::Unauthorized => "Unauthorized. Please sign in again.".to_string(),
             ApiError::BadRequest(msg) => msg.clone(),
             ApiError::Conflict(msg) => msg.clone(),
