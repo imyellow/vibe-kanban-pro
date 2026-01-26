@@ -111,14 +111,18 @@ async fn main() -> Result<(), VibeKanbanError> {
 
     tracing::info!("Server running on http://{host}:{actual_port}");
 
-    if !cfg!(debug_assertions) {
-        tracing::info!("Opening browser...");
+    let skip_browser = std::env::var("VK_SKIP_BROWSER_OPEN").is_ok();
+    if !cfg!(debug_assertions) && !skip_browser {
+        // Use VK_FRONTEND_URL if set (for start:local mode), otherwise use backend URL
+        let browser_url = std::env::var("VK_FRONTEND_URL")
+            .unwrap_or_else(|_| format!("http://127.0.0.1:{actual_port}"));
+        tracing::info!("Opening browser at {}...", browser_url);
         tokio::spawn(async move {
-            if let Err(e) = open_browser(&format!("http://127.0.0.1:{actual_port}")).await {
+            if let Err(e) = open_browser(&browser_url).await {
                 tracing::warn!(
-                    "Failed to open browser automatically: {}. Please open http://127.0.0.1:{} manually.",
+                    "Failed to open browser automatically: {}. Please open {} manually.",
                     e,
-                    actual_port
+                    browser_url
                 );
             }
         });

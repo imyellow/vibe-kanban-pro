@@ -31,7 +31,7 @@
     "prepare-db:check": "node scripts/prepare-db.js --check",
     "build:npx": "bash ./local-build.sh",
     "build:local": "cd frontend && pnpm run build && cd .. && cargo build --release",
-    "start:local": "export FRONTEND_PORT=1234 && export BACKEND_PORT=1235 && export VK_ALLOWED_ORIGINS=\"http://localhost:1234\" && concurrently \"cargo run --release --bin server\" \"cd frontend && pnpm run preview -- --port 1234 --host --open\"",
+    "start:local": "(lsof -ti :1234 | xargs kill 2>/dev/null || true) && (lsof -ti :1235 | xargs kill 2>/dev/null || true) && sleep 0.5 && export FRONTEND_PORT=1234 && export BACKEND_PORT=1235 && export VK_ALLOWED_ORIGINS=\"http://localhost:1234\" && export VK_FRONTEND_URL=\"http://localhost:1234\" && concurrently \"cargo run --release --bin server\" \"cd frontend && pnpm run preview\"",
     "prepack": "pnpm run build:npx",
     "remote:dev": "cd crates/remote && docker compose --env-file .env.remote up --build ; docker compose down -v",
     "remote:dev:clean": "cd crates/remote && docker compose --env-file .env.remote down -v",
