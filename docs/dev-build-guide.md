@@ -5,19 +5,21 @@
 - Start frontend + backend (QA mode recommended): `pnpm run dev:qa`
   - Auto-assigns `FRONTEND_PORT` and `BACKEND_PORT`
   - Check terminal logs for the chosen ports
-  - Frontend: `http://localhost:<FRONTEND_PORT>`
+  - Dev web page: `http://localhost:<FRONTEND_PORT>`
   - Backend API: `http://localhost:<BACKEND_PORT>`
 - If the QA script is unavailable, use: `pnpm run dev`
 
-Frontend only:
+Frontend only (dev web page):
 - `pnpm -C frontend run dev -- --port 3000 --host`
 - Visit: `http://localhost:3000`
 
 ## Build & Preview
 - Build frontend for production: `pnpm -C frontend run build`
   - Output: `frontend/dist`
-- Preview production build: `pnpm -C frontend run preview -- --host --port 4173`
+- Run the build web page locally:
+  - `pnpm -C frontend run preview -- --host --port 4173`
   - Visit: `http://localhost:4173`
+  - Alternative: `npx serve frontend/dist -l 4173`
 
 Backend (if you need API access):
 - `cargo run --bin server` (local)
