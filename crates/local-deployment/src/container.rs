@@ -42,10 +42,11 @@ use serde_json::json;
 use services::services::{
     analytics::AnalyticsContext,
     approvals::{Approvals, executor_approvals::ExecutorApprovalBridge},
+    commit_message::{build_branch_commit_prompt, build_diff_context, generate_commit_message, summarize_diffs},
     config::Config,
     container::{ContainerError, ContainerRef, ContainerService},
     diff_stream::{self, DiffStreamHandle},
-    git::{GitCli, GitService},
+    git::{DiffTarget, GitCli, GitService},
     image::ImageService,
     notification::NotificationService,
     queued_message::QueuedMessageService,
@@ -229,11 +230,17 @@ impl LocalContainerService {
     }
 
     /// Get the commit message based on the execution run reason.
+    /// For CodingAgent runs, attempts to generate a standardized Conventional Commits message
+    /// using DeepSeek API. Falls back to the agent's summary or default message on failure.
     async fn get_commit_message(&self, ctx: &ExecutionContext) -> String {
         match ctx.execution_process.run_reason {
             ExecutionProcessRunReason::CodingAgent => {
-                // Try to retrieve the task summary from the coding agent turn
-                // otherwise fallback to default message
+                // Try to generate commit message using DeepSeek API
+                if let Some(message) = self.try_generate_commit_message_with_deepseek(ctx).await {
+                    return message;
+                }
+
+                // Fallback: Try to retrieve the task summary from the coding agent turn
                 match CodingAgentTurn::find_by_execution_process_id(
                     &self.db().pool,
                     ctx.execution_process.id,
@@ -271,6 +278,107 @@ impl LocalContainerService {
                 "Changes from execution process {}",
                 ctx.execution_process.id
             ),
+        }
+    }
+
+    /// Attempt to generate a commit message using DeepSeek API.
+    /// Returns None if generation fails, allowing fallback to other methods.
+    async fn try_generate_commit_message_with_deepseek(
+        &self,
+        ctx: &ExecutionContext,
+    ) -> Option<String> {
+        // Get workspace root
+        let container_ref = ctx.workspace.container_ref.as_ref()?;
+        let workspace_root = PathBuf::from(container_ref);
+
+        // Get workspace repos with target branches
+        let workspace_repos = match WorkspaceRepo::find_by_workspace_id(&self.db().pool, ctx.workspace.id)
+            .await
+        {
+            Ok(repos) => repos,
+            Err(e) => {
+                tracing::debug!("Failed to find workspace repos: {}", e);
+                return None;
+            }
+        };
+
+        // Use first repo's target branch for the prompt (or default to "main")
+        let target_branch = workspace_repos
+            .first()
+            .map(|r| r.target_branch.clone())
+            .unwrap_or_else(|| "main".to_string());
+
+        // Collect diffs from all repos with uncommitted changes
+        let mut all_diffs = Vec::new();
+        for repo in &ctx.repos {
+            let repo_path = workspace_root.join(&repo.name);
+            if !repo_path.exists() {
+                continue;
+            }
+
+            // Find the target branch for this repo
+            let repo_target_branch = workspace_repos
+                .iter()
+                .find(|wr| wr.repo_id == repo.id)
+                .map(|wr| wr.target_branch.as_str())
+                .unwrap_or("main");
+
+            // Get base commit (merge base between workspace branch and target branch)
+            let base_commit = match self.git.get_base_commit(
+                &repo.path,
+                &ctx.workspace.branch,
+                repo_target_branch,
+            ) {
+                Ok(commit) => commit,
+                Err(e) => {
+                    tracing::debug!("Failed to get base commit for repo {}: {}", repo.name, e);
+                    continue;
+                }
+            };
+
+            // Get worktree diffs (all changes since base commit)
+            match self.git.get_diffs(
+                DiffTarget::Worktree {
+                    worktree_path: &repo_path,
+                    base_commit: &base_commit,
+                },
+                None,
+            ) {
+                Ok(diffs) => {
+                    all_diffs.extend(diffs);
+                }
+                Err(e) => {
+                    tracing::debug!("Failed to get diffs for repo {}: {}", repo.name, e);
+                }
+            }
+        }
+
+        // If no diffs found, return None to use fallback
+        if all_diffs.is_empty() {
+            tracing::debug!("No diffs found, skipping DeepSeek commit message generation");
+            return None;
+        }
+
+        // Build prompt and generate message
+        let diff_summary = summarize_diffs(&all_diffs);
+        let diff_context = build_diff_context(&all_diffs);
+        let prompt = build_branch_commit_prompt(
+            &ctx.task.title,
+            ctx.task.description.as_deref(),
+            &target_branch,
+            &diff_summary,
+            &diff_context,
+        );
+
+        match generate_commit_message(&prompt).await {
+            Ok(message) => {
+                tracing::info!("Generated commit message using DeepSeek API");
+                Some(message)
+            }
+            Err(e) => {
+                tracing::warn!("Failed to generate commit message with DeepSeek: {}", e);
+                None
+            }
         }
     }
 
