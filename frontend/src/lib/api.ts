@@ -103,6 +103,10 @@ type GenerateMergeCommitMessageResponse = {
   message: string;
 };
 
+type LastCommitMessageResponse = {
+  message: string;
+};
+
 export class ApiError<E = unknown> extends Error {
   public status?: number;
   public error_data?: E;
@@ -616,6 +620,15 @@ export const attemptsApi = {
       }
     );
     return handleApiResponse<GenerateMergeCommitMessageResponse>(response);
+  },
+  getLastCommitMessage: async (
+    attemptId: string,
+    repoId: string
+  ): Promise<LastCommitMessageResponse> => {
+    const response = await makeRequest(
+      `/api/task-attempts/${attemptId}/last-commit-message?repo_id=${repoId}`
+    );
+    return handleApiResponse<LastCommitMessageResponse>(response);
   },
 
   push: async (

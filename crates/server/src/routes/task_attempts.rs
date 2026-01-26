@@ -429,6 +429,16 @@ pub struct GenerateMergeCommitMessageResponse {
     pub message: String,
 }
 
+#[derive(Debug, Deserialize, TS)]
+pub struct LastCommitMessageQuery {
+    pub repo_id: Uuid,
+}
+
+#[derive(Debug, Serialize, TS)]
+pub struct LastCommitMessageResponse {
+    pub message: String,
+}
+
 const MAX_DIFF_CONTEXT_CHARS: usize = 12000;
 const MAX_FILE_CONTENT_CHARS: usize = 2000;
 
@@ -524,15 +534,17 @@ fn build_branch_commit_prompt(
         .to_string();
 
     let mut prompt = String::from(
-        "You are a Git commit message generator.\n\
-Output a standard Conventional Commits message in Chinese.\n\n\
-Rules:\n\
-- Output commit message text only.\n\
-- First line format: type(scope): summary OR type: summary.\n\
-- Use Chinese for summary and body.\n\
-- First line should be concise (<= 72 chars).\n\
-- If a body is needed, add a blank line and 1-3 sentences.\n\
-- Explain what changed and why. Avoid generic lines.\n\n",
+        "你是一个 Git 提交信息生成器。\n\
+请生成中文的标准 Git commit message（用于任务分支提交）。\n\n\
+规则：\n\
+- 只输出提交信息本体，不要附加解释、编号或代码块。\n\
+- 第一行使用 Conventional Commits 格式，例如：\n\
+  fix(ui): 修复按钮点击无响应问题\n\
+  docs: 更新API接口文档\n\
+  refactor(core): 重构登录模块代码结构\n\
+- 第一行尽量简洁（<= 72 字符）。\n\
+- 如需正文，第二行留空，从第三行开始写 1-3 句中文说明。\n\
+- 重点说明“改了什么、为什么改”。避免泛泛的“更新文件/合并分支”。\n\n",
     );
 
     prompt.push_str(&format!("Task title: {title}\n"));
@@ -814,6 +826,40 @@ pub async fn generate_merge_commit_message(
 
     Ok(ResponseJson(ApiResponse::success(
         GenerateMergeCommitMessageResponse { message },
+    )))
+}
+
+#[axum::debug_handler]
+pub async fn get_last_commit_message(
+    Extension(workspace): Extension<Workspace>,
+    State(deployment): State<DeploymentImpl>,
+    Query(query): Query<LastCommitMessageQuery>,
+) -> Result<ResponseJson<ApiResponse<LastCommitMessageResponse>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    let workspace_repo =
+        WorkspaceRepo::find_by_workspace_and_repo_id(pool, workspace.id, query.repo_id)
+            .await?
+            .ok_or(RepoError::NotFound)?;
+
+    let repo = Repo::find_by_id(pool, workspace_repo.repo_id)
+        .await?
+        .ok_or(RepoError::NotFound)?;
+
+    let container_ref = deployment
+        .container()
+        .ensure_container_exists(&workspace)
+        .await?;
+    let workspace_path = Path::new(&container_ref);
+    let worktree_path = workspace_path.join(repo.name);
+
+    let head_info = deployment.git().get_head_info(&worktree_path)?;
+    let message = deployment
+        .git()
+        .get_commit_message(&worktree_path, &head_info.oid)?;
+
+    Ok(ResponseJson(ApiResponse::success(
+        LastCommitMessageResponse { message },
     )))
 }
 
@@ -2059,6 +2105,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         .route("/diff/ws", get(stream_task_attempt_diff_ws))
         .route("/merge", post(merge_task_attempt))
         .route("/merge/commit-message", post(generate_merge_commit_message))
+        .route("/last-commit-message", get(get_last_commit_message))
         .route("/push", post(push_task_attempt_branch))
         .route("/push/force", post(force_push_task_attempt_branch))
         .route("/rebase", post(rebase_task_attempt))

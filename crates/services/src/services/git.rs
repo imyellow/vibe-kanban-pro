@@ -1104,6 +1104,22 @@ impl GitService {
         Ok(commit.summary().unwrap_or("(no subject)").to_string())
     }
 
+    pub fn get_commit_message(
+        &self,
+        repo_path: &Path,
+        commit_sha: &str,
+    ) -> Result<String, GitServiceError> {
+        let repo = self.open_repo(repo_path)?;
+        let oid = git2::Oid::from_str(commit_sha)
+            .map_err(|_| GitServiceError::InvalidRepository("Invalid commit SHA".into()))?;
+        let commit = repo.find_commit(oid)?;
+        Ok(commit
+            .message()
+            .unwrap_or("(no message)")
+            .trim_end()
+            .to_string())
+    }
+
     /// Compare two OIDs and return (ahead, behind) counts: how many commits
     /// `from_oid` is ahead of and behind `to_oid`.
     pub fn ahead_behind_commits_by_oid(

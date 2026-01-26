@@ -11,11 +11,13 @@
   - 生成提示词改为中文并要求 Conventional Commits 格式。
 - 修改 `frontend/src/components/tasks/Toolbar/GitOperations.tsx`
   - 合并按钮先弹窗确认，再传入 `commitMessage` 执行合并。
+  - 弹窗默认提交信息优先使用任务分支最近一次提交信息。
   - 使用 `useDiffStream` 为生成提示提供 diff 上下文。
 - 修改 `frontend/src/hooks/useMerge.ts`
   - `MergeParams` 新增 `commitMessage`，合并请求携带 `commit_message`。
 - 修改 `frontend/src/lib/api.ts`
   - 新增 `generateMergeCommitMessage` API，调用 `/api/task-attempts/:id/merge/commit-message`。
+  - 新增 `getLastCommitMessage` API，调用 `/api/task-attempts/:id/last-commit-message`。
 - i18n 文案新增
   - `frontend/src/i18n/locales/en/tasks.json`
   - `frontend/src/i18n/locales/zh-Hans/tasks.json`
@@ -28,6 +30,7 @@
 ## 后端改动
 - 修改 `crates/server/src/routes/task_attempts.rs`
   - 新增合并提交生成接口 `/merge/commit-message`。
+  - 新增获取任务分支最近提交信息接口 `/last-commit-message`。
   - 新增 DeepSeek 调用封装 `deepseek_generate_commit_message`。
   - 新增 diff 汇总与上下文拼装方法：
     - `summarize_diffs`
@@ -39,6 +42,7 @@
   - 新增 `amend_commit_message`（`git commit --amend -m`）。
 - 修改 `crates/services/src/services/git.rs`
   - 新增 `GitService::amend_commit_message`，并对 staged 变更做保护。
+  - 新增 `GitService::get_commit_message`，用于读取最近一次提交的完整信息。
 - 修改 `crates/server/src/error.rs`
   - 新增 `ApiError::Http` 以处理 `reqwest` 错误。
 - 修改 `crates/server/src/main.rs`
@@ -53,6 +57,7 @@
 ## 方法/行为变化摘要
 - 合并提交：由弹窗内容决定，用户可编辑。
 - 分支提交：合并前自动用 DeepSeek 生成并 `amend` 最后一条提交信息。
+- 合并弹窗默认内容：优先取任务分支最新提交信息，失败时回退为任务标题/描述。
 
 ## 运行/检查
 - `pnpm -C frontend run build`
