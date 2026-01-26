@@ -30,6 +30,8 @@
     "prepare-db": "node scripts/prepare-db.js",
     "prepare-db:check": "node scripts/prepare-db.js --check",
     "build:npx": "bash ./local-build.sh",
+    "build:local": "cd frontend && pnpm run build && cd .. && cargo build --release",
+    "start:local": "export FRONTEND_PORT=1234 && export BACKEND_PORT=1235 && export VK_ALLOWED_ORIGINS=\"http://localhost:1234\" && concurrently \"cargo run --release --bin server\" \"cd frontend && pnpm run preview -- --port 1234 --host --open\"",
     "prepack": "pnpm run build:npx",
     "remote:dev": "cd crates/remote && docker compose --env-file .env.remote up --build ; docker compose down -v",
     "remote:dev:clean": "cd crates/remote && docker compose --env-file .env.remote down -v",
