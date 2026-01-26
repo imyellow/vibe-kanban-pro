@@ -32,7 +32,6 @@ import { useAttemptRepo } from '@/hooks/useAttemptRepo';
 import { useGitOperations } from '@/hooks/useGitOperations';
 import { useRepoBranches } from '@/hooks';
 import { useDiffStream } from '@/hooks/useDiffStream';
-import { attemptsApi } from '@/lib/api';
 
 interface GitOperationsProps {
   selectedAttempt: Workspace;
@@ -187,18 +186,8 @@ function GitOperations({
     const repoId = getSelectedRepoId();
     if (!repoId) return;
 
-    let defaultMessage = buildDefaultMergeCommitMessage(task);
-    try {
-      const response = await attemptsApi.getLastCommitMessage(
-        selectedAttempt.id,
-        repoId
-      );
-      if (response.message?.trim()) {
-        defaultMessage = response.message.trim();
-      }
-    } catch (error) {
-      // Fallback to task-based message when API fails
-    }
+    const defaultMessage = buildDefaultMergeCommitMessage(task);
+
     try {
       const result = await MergeCommitDialog.show({
         attemptId: selectedAttempt.id,
@@ -208,6 +197,7 @@ function GitOperations({
         taskTitle: task.title,
         taskDescription: task.description,
         targetBranch: getSelectedRepoStatus()?.target_branch_name ?? undefined,
+        autoGenerate: true, // 自动生成提交信息
       });
       if (result.action === 'confirmed' && result.commitMessage) {
         await performMerge(result.commitMessage);
