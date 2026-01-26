@@ -286,6 +286,16 @@
       "title": "변경사항 병합",
       "description": "변경사항을 대상 브랜치에 병합합니다. 계속하시겠습니까?"
     },
+    "mergeCommitDialog": {
+      "title": "병합 커밋 메시지 확인",
+      "description": "병합 전에 커밋 메시지를 확인하고 수정하세요.",
+      "messageLabel": "커밋 메시지",
+      "messagePlaceholder": "병합 커밋 메시지를 입력하세요",
+      "generate": "커밋 메시지 생성",
+      "generating": "생성 중...",
+      "confirm": "병합",
+      "generateError": "커밋 메시지를 생성하지 못했습니다"
+    },
     "createRepo": {
       "dialog": {
         "title": "새 저장소 만들기",

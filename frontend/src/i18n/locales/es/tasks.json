@@ -289,6 +289,16 @@
       "title": "Fusionar cambios",
       "description": "Esto fusionará sus cambios en la rama de destino. ¿Está seguro de que desea continuar?"
     },
+    "mergeCommitDialog": {
+      "title": "Confirmar mensaje de commit de fusión",
+      "description": "Revisa y edita el mensaje de commit antes de fusionar.",
+      "messageLabel": "Mensaje de commit",
+      "messagePlaceholder": "Introduce el mensaje de commit de fusión",
+      "generate": "Generar mensaje de commit",
+      "generating": "Generando...",
+      "confirm": "Fusionar",
+      "generateError": "No se pudo generar el mensaje de commit"
+    },
     "states": {
       "createPr": "Crear PR",
       "forcePush": "Push forzado",

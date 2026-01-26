@@ -34,11 +34,13 @@ use db::models::{
     workspace_repo::{CreateWorkspaceRepo, RepoWithTargetBranch, WorkspaceRepo},
 };
 use deployment::Deployment;
+use tokio::{fs, process::Command};
 use executors::{
     actions::{
         ExecutorAction, ExecutorActionType,
         script::{ScriptContext, ScriptRequest, ScriptRequestLanguage},
     },
+    command::CommandBuilder,
     executors::{CodingAgent, ExecutorError},
     profile::{ExecutorConfigs, ExecutorProfileId},
 };
@@ -410,6 +412,22 @@ async fn handle_workspaces_ws(
 #[derive(Debug, Deserialize, Serialize, TS)]
 pub struct MergeTaskAttemptRequest {
     pub repo_id: Uuid,
+    /// Custom commit message. If provided, replaces the auto-generated message.
+    #[serde(default)]
+    pub commit_message: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+pub struct GenerateMergeCommitMessageRequest {
+    pub repo_id: Uuid,
+    pub prompt: String,
+    #[serde(default)]
+    pub diff_context: Option<String>,
+}
+
+#[derive(Debug, Serialize, TS)]
+pub struct GenerateMergeCommitMessageResponse {
+    pub message: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, TS)]
@@ -459,15 +477,31 @@ pub async fn merge_task_attempt(
     let task_uuid_str = task.id.to_string();
     let first_uuid_section = task_uuid_str.split('-').next().unwrap_or(&task_uuid_str);
 
-    let mut commit_message = format!("{} (vibe-kanban {})", task.title, first_uuid_section);
-
-    // Add description on next line if it exists
-    if let Some(description) = &task.description
-        && !description.trim().is_empty()
-    {
-        commit_message.push_str("\n\n");
-        commit_message.push_str(description);
-    }
+    // Use custom commit message if provided, otherwise generate default
+    let commit_message = if let Some(custom_msg) = request.commit_message {
+        if custom_msg.trim().is_empty() {
+            // Fall back to default if empty string provided
+            let mut msg = format!("{} (vibe-kanban {})", task.title, first_uuid_section);
+            if let Some(description) = &task.description
+                && !description.trim().is_empty()
+            {
+                msg.push_str("\n\n");
+                msg.push_str(description);
+            }
+            msg
+        } else {
+            custom_msg
+        }
+    } else {
+        let mut msg = format!("{} (vibe-kanban {})", task.title, first_uuid_section);
+        if let Some(description) = &task.description
+            && !description.trim().is_empty()
+        {
+            msg.push_str("\n\n");
+            msg.push_str(description);
+        }
+        msg
+    };
 
     let merge_commit_id = deployment.git().merge_changes(
         &repo.path,
@@ -526,6 +560,78 @@ pub async fn merge_task_attempt(
         .await;
 
     Ok(ResponseJson(ApiResponse::success(())))
+}
+
+#[axum::debug_handler]
+pub async fn generate_merge_commit_message(
+    Extension(_workspace): Extension<Workspace>,
+    State(_deployment): State<DeploymentImpl>,
+    Json(request): Json<GenerateMergeCommitMessageRequest>,
+) -> Result<ResponseJson<ApiResponse<GenerateMergeCommitMessageResponse>>, ApiError> {
+    let diff_context = request.diff_context.unwrap_or_default();
+    let mut diff_file_path = None;
+
+    if !diff_context.trim().is_empty() {
+        let file_path = std::env::temp_dir()
+            .join(format!("vibe-kanban-merge-diff-{}.txt", Uuid::new_v4()));
+        fs::write(&file_path, diff_context).await?;
+        diff_file_path = Some(file_path);
+    }
+
+    let result: Result<ResponseJson<ApiResponse<GenerateMergeCommitMessageResponse>>, ApiError> =
+        async {
+            if request.prompt.trim().is_empty() {
+                return Err(ApiError::BadRequest(
+                    "Prompt cannot be empty".to_string(),
+                ));
+            }
+
+            let mut command_builder = CommandBuilder::new("npx -y opencode-ai@1.1.25")
+                .extend_params(["run", "--format", "default"]);
+
+            if let Some(path) = diff_file_path.as_ref() {
+                let path_str = path.to_string_lossy().to_string();
+                command_builder = command_builder.extend_params(["--file", &path_str]);
+            }
+
+            let command_parts = command_builder.build_initial()?;
+            let (program_path, args) = command_parts.into_resolved().await?;
+
+            let output = Command::new(program_path)
+                .args(args)
+                .arg(&request.prompt)
+                .env("NPM_CONFIG_LOGLEVEL", "error")
+                .env("NODE_NO_WARNINGS", "1")
+                .env("NO_COLOR", "1")
+                .output()
+                .await?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(ApiError::BadRequest(format!(
+                    "opencode run failed: {}",
+                    stderr.trim()
+                )));
+            }
+
+            let message = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if message.is_empty() {
+                return Err(ApiError::BadRequest(
+                    "opencode run returned empty output".to_string(),
+                ));
+            }
+
+            Ok(ResponseJson(ApiResponse::success(
+                GenerateMergeCommitMessageResponse { message },
+            )))
+        }
+        .await;
+
+    if let Some(path) = diff_file_path {
+        let _ = fs::remove_file(path).await;
+    }
+
+    result
 }
 
 pub async fn push_task_attempt_branch(
@@ -1769,6 +1875,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         .route("/branch-status", get(get_task_attempt_branch_status))
         .route("/diff/ws", get(stream_task_attempt_diff_ws))
         .route("/merge", post(merge_task_attempt))
+        .route("/merge/commit-message", post(generate_merge_commit_message))
         .route("/push", post(push_task_attempt_branch))
         .route("/push/force", post(force_push_task_attempt_branch))
         .route("/rebase", post(rebase_task_attempt))

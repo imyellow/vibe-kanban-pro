@@ -357,6 +357,16 @@
       "title": "合并更改",
       "description": "这将把您的更改合并到目标分支。您确定要继续吗？"
     },
+    "mergeCommitDialog": {
+      "title": "确认合并提交信息",
+      "description": "合并前请确认并可编辑提交信息。",
+      "messageLabel": "提交信息",
+      "messagePlaceholder": "输入合并提交信息",
+      "generate": "生成提交信息",
+      "generating": "生成中...",
+      "confirm": "合并",
+      "generateError": "生成提交信息失败"
+    },
     "createRepo": {
       "dialog": {
         "title": "创建新仓库",

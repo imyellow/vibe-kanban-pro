@@ -93,6 +93,16 @@ import {
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { createWorkspaceWithSession } from '@/types/attempt';
 
+type GenerateMergeCommitMessageRequest = {
+  repo_id: string;
+  prompt: string;
+  diff_context?: string;
+};
+
+type GenerateMergeCommitMessageResponse = {
+  message: string;
+};
+
 export class ApiError<E = unknown> extends Error {
   public status?: number;
   public error_data?: E;
@@ -593,6 +603,19 @@ export const attemptsApi = {
       }
     );
     return handleApiResponse<void>(response);
+  },
+  generateMergeCommitMessage: async (
+    attemptId: string,
+    data: GenerateMergeCommitMessageRequest
+  ): Promise<GenerateMergeCommitMessageResponse> => {
+    const response = await makeRequest(
+      `/api/task-attempts/${attemptId}/merge/commit-message`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+    return handleApiResponse<GenerateMergeCommitMessageResponse>(response);
   },
 
   push: async (

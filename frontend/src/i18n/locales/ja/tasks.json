@@ -263,6 +263,16 @@
       "title": "変更をマージ",
       "description": "変更をターゲットブランチにマージします。続行してもよろしいですか？"
     },
+    "mergeCommitDialog": {
+      "title": "マージコミットメッセージを確認",
+      "description": "マージ前にコミットメッセージを確認・編集します。",
+      "messageLabel": "コミットメッセージ",
+      "messagePlaceholder": "マージコミットメッセージを入力",
+      "generate": "コミットメッセージを生成",
+      "generating": "生成中...",
+      "confirm": "マージ",
+      "generateError": "コミットメッセージの生成に失敗しました"
+    },
     "createRepo": {
       "dialog": {
         "title": "新しいリポジトリを作成",

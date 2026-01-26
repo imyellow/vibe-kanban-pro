@@ -26,10 +26,12 @@ import { ChangeTargetBranchDialog } from '@/components/dialogs/tasks/ChangeTarge
 import RepoSelector from '@/components/tasks/RepoSelector';
 import { RebaseDialog } from '@/components/dialogs/tasks/RebaseDialog';
 import { CreatePRDialog } from '@/components/dialogs/tasks/CreatePRDialog';
+import { MergeCommitDialog } from '@/components/dialogs/tasks/MergeCommitDialog';
 import { useTranslation } from 'react-i18next';
 import { useAttemptRepo } from '@/hooks/useAttemptRepo';
 import { useGitOperations } from '@/hooks/useGitOperations';
 import { useRepoBranches } from '@/hooks';
+import { useDiffStream } from '@/hooks/useDiffStream';
 
 interface GitOperationsProps {
   selectedAttempt: Workspace;
@@ -42,6 +44,15 @@ interface GitOperationsProps {
 }
 
 export type GitOperationsInputs = Omit<GitOperationsProps, 'selectedAttempt'>;
+
+const buildDefaultMergeCommitMessage = (task: TaskWithAttemptStatus) => {
+  const idSection = task.id.split('-')[0] || task.id;
+  let message = `${task.title} (vibe-kanban ${idSection})`;
+  if (task.description && task.description.trim()) {
+    message += `\n\n${task.description.trim()}`;
+  }
+  return message;
+};
 
 function GitOperations({
   selectedAttempt,
@@ -59,6 +70,7 @@ function GitOperations({
   );
   const git = useGitOperations(selectedAttempt.id, selectedRepoId ?? undefined);
   const { data: branches = [] } = useRepoBranches(selectedRepoId);
+  const { diffs } = useDiffStream(selectedAttempt.id, true);
   const isChangingTargetBranch = git.states.changeTargetBranchPending;
 
   // Local state for git operations
@@ -171,8 +183,26 @@ function GitOperations({
   }, [mergeInfo.hasOpenPR, pushSuccess, pushing, t]);
 
   const handleMergeClick = async () => {
-    // Directly perform merge without checking branch status
-    await performMerge();
+    const repoId = getSelectedRepoId();
+    if (!repoId) return;
+
+    const defaultMessage = buildDefaultMergeCommitMessage(task);
+    try {
+      const result = await MergeCommitDialog.show({
+        attemptId: selectedAttempt.id,
+        repoId,
+        defaultMessage,
+        diffs,
+        taskTitle: task.title,
+        taskDescription: task.description,
+        targetBranch: getSelectedRepoStatus()?.target_branch_name ?? undefined,
+      });
+      if (result.action === 'confirmed' && result.commitMessage) {
+        await performMerge(result.commitMessage);
+      }
+    } catch (error) {
+      // User cancelled - do nothing
+    }
   };
 
   const handlePushClick = async () => {
@@ -188,13 +218,14 @@ function GitOperations({
     }
   };
 
-  const performMerge = async () => {
+  const performMerge = async (commitMessage?: string) => {
     try {
       setMerging(true);
       const repoId = getSelectedRepoId();
       if (!repoId) return;
       await git.actions.merge({
         repoId,
+        commitMessage,
       });
       setMergeSuccess(true);
       setTimeout(() => setMergeSuccess(false), 2000);

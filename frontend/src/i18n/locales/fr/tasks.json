@@ -412,6 +412,16 @@
       "title": "Fusionner les modifications",
       "description": "Cela fusionnera vos modifications dans la branche cible. Êtes-vous sûr de vouloir continuer ?"
     },
+    "mergeCommitDialog": {
+      "title": "Confirmer le message de commit de fusion",
+      "description": "Vérifiez et modifiez le message de commit avant de fusionner.",
+      "messageLabel": "Message de commit",
+      "messagePlaceholder": "Saisissez le message de commit de fusion",
+      "generate": "Générer un message de commit",
+      "generating": "Génération...",
+      "confirm": "Fusionner",
+      "generateError": "Impossible de générer le message de commit"
+    },
     "createRepo": {
       "dialog": {
         "title": "Créer un nouveau dépôt",

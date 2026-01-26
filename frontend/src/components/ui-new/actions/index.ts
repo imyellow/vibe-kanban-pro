@@ -910,7 +910,7 @@ export const Actions = {
       });
 
       if (confirmResult === 'confirmed') {
-        await attemptsApi.merge(workspaceId, { repo_id: repoId });
+        await attemptsApi.merge(workspaceId, { repo_id: repoId, commit_message: null });
         invalidateWorkspaceQueries(ctx.queryClient, workspaceId);
       }
     },

@@ -357,6 +357,16 @@
       "title": "合併變更",
       "description": "這將把您的變更合併到目標分支。確定要繼續嗎？"
     },
+    "mergeCommitDialog": {
+      "title": "確認合併提交訊息",
+      "description": "合併前請確認並可編輯提交訊息。",
+      "messageLabel": "提交訊息",
+      "messagePlaceholder": "輸入合併提交訊息",
+      "generate": "產生提交訊息",
+      "generating": "產生中...",
+      "confirm": "合併",
+      "generateError": "產生提交訊息失敗"
+    },
     "createRepo": {
       "dialog": {
         "title": "建立新儲存庫",

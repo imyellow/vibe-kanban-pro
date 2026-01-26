@@ -412,6 +412,16 @@
       "title": "Merge Changes",
       "description": "This will merge your changes into the target branch. Are you sure you want to continue?"
     },
+    "mergeCommitDialog": {
+      "title": "Confirm Merge Commit Message",
+      "description": "Review and edit the merge commit message before merging.",
+      "messageLabel": "Commit message",
+      "messagePlaceholder": "Enter the merge commit message",
+      "generate": "Generate commit message",
+      "generating": "Generating...",
+      "confirm": "Merge",
+      "generateError": "Failed to generate commit message"
+    },
     "createRepo": {
       "dialog": {
         "title": "Create New Repository",
