@@ -225,6 +225,15 @@ impl Merge {
 
         Ok(())
     }
+    /// Delete a merge record by ID
+    pub async fn delete(pool: &SqlitePool, id: Uuid) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM merges WHERE id = $1")
+            .bind(id)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
     /// Find all merges for a workspace (returns both direct and PR merges)
     pub async fn find_by_workspace_id(
         pool: &SqlitePool,

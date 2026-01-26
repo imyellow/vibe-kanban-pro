@@ -596,6 +596,77 @@ pub async fn merge_task_attempt(
     Ok(ResponseJson(ApiResponse::success(())))
 }
 
+#[derive(Debug, Deserialize, Serialize, TS)]
+pub struct RevertMergeRequest {
+    pub repo_id: Uuid,
+}
+
+#[axum::debug_handler]
+pub async fn revert_merge(
+    Extension(workspace): Extension<Workspace>,
+    State(deployment): State<DeploymentImpl>,
+    Json(request): Json<RevertMergeRequest>,
+) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    // Find the latest direct merge for this workspace and repo
+    let merges = Merge::find_by_workspace_and_repo_id(pool, workspace.id, request.repo_id).await?;
+
+    // Find the most recent direct merge (not PR)
+    let latest_direct_merge = merges
+        .into_iter()
+        .find_map(|m| match m {
+            Merge::Direct(direct) => Some(direct),
+            Merge::Pr(_) => None,
+        })
+        .ok_or_else(|| ApiError::BadRequest("No direct merge found to revert".to_string()))?;
+
+    let repo = Repo::find_by_id(pool, latest_direct_merge.repo_id)
+        .await?
+        .ok_or(RepoError::NotFound)?;
+
+    // Find where the target branch is checked out
+    let base_worktree_path = deployment
+        .git()
+        .find_checkout_path_for_branch(&repo.path, &latest_direct_merge.target_branch_name)?
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "Target branch '{}' is not checked out anywhere",
+                latest_direct_merge.target_branch_name
+            ))
+        })?;
+
+    // Revert the merge commit
+    deployment
+        .git()
+        .revert_merge(&base_worktree_path, &latest_direct_merge.merge_commit)?;
+
+    // Delete the merge record from database
+    Merge::delete(pool, latest_direct_merge.id).await?;
+
+    // Update task status back to InProgress
+    let task = workspace
+        .parent_task(pool)
+        .await?
+        .ok_or(ApiError::Workspace(WorkspaceError::TaskNotFound))?;
+    Task::update_status(pool, task.id, TaskStatus::InProgress).await?;
+
+    // Unarchive the workspace
+    Workspace::set_archived(pool, workspace.id, false).await?;
+
+    deployment
+        .track_if_analytics_allowed(
+            "merge_reverted",
+            serde_json::json!({
+                "task_id": task.id.to_string(),
+                "workspace_id": workspace.id.to_string(),
+            }),
+        )
+        .await;
+
+    Ok(ResponseJson(ApiResponse::success(())))
+}
+
 #[axum::debug_handler]
 pub async fn generate_merge_commit_message(
     Extension(_workspace): Extension<Workspace>,
@@ -1903,6 +1974,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         .route("/branch-status", get(get_task_attempt_branch_status))
         .route("/diff/ws", get(stream_task_attempt_diff_ws))
         .route("/merge", post(merge_task_attempt))
+        .route("/merge/revert", post(revert_merge))
         .route("/merge/commit-message", post(generate_merge_commit_message))
         .route("/last-commit-message", get(get_last_commit_message))
         .route("/push", post(push_task_attempt_branch))

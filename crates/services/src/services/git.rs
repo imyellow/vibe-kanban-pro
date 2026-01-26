@@ -767,7 +767,7 @@ impl GitService {
     }
 
     /// Find where a branch is currently checked out
-    fn find_checkout_path_for_branch(
+    pub fn find_checkout_path_for_branch(
         &self,
         repo_path: &Path,
         branch_name: &str,
@@ -887,6 +887,29 @@ impl GitService {
             }
         }
     }
+
+    /// Revert a merge commit on the target branch
+    /// This creates a new commit that undoes the changes from the merge
+    pub fn revert_merge(
+        &self,
+        base_worktree_path: &Path,
+        merge_commit_sha: &str,
+    ) -> Result<String, GitServiceError> {
+        let git_cli = GitCli::new();
+
+        // Ensure we have commit identity
+        self.ensure_cli_commit_identity(base_worktree_path)?;
+
+        // Revert the merge commit
+        let new_sha = git_cli
+            .revert_merge(base_worktree_path, merge_commit_sha)
+            .map_err(|e| {
+                GitServiceError::InvalidRepository(format!("git revert failed: {e}"))
+            })?;
+
+        Ok(new_sha)
+    }
+
     fn get_branch_status_inner(
         &self,
         repo: &Repository,

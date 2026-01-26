@@ -103,7 +103,7 @@ pub struct UpdateTask {
 impl Task {
     pub fn to_prompt(&self) -> String {
         if let Some(description) = self.description.as_ref().filter(|d| !d.trim().is_empty()) {
-            format!("{}\n\n{}", &self.title, description)
+            description.clone()
         } else {
             self.title.clone()
         }

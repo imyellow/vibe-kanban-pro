@@ -651,6 +651,28 @@ impl GitCli {
         self.git(worktree_path, ["revert", "--abort"]).map(|_| ())
     }
 
+    /// Revert a merge commit using `git revert -m 1`
+    /// This creates a new commit that undoes the changes from the merge
+    pub fn revert_merge(
+        &self,
+        worktree_path: &Path,
+        merge_commit_sha: &str,
+    ) -> Result<String, GitCliError> {
+        // Use -m 1 to specify we want to keep the first parent (the branch we merged into)
+        self.git(
+            worktree_path,
+            ["revert", "-m", "1", "--no-edit", merge_commit_sha],
+        )
+        .map(|_| ())?;
+
+        // Return the new commit SHA
+        let sha = self
+            .git(worktree_path, ["rev-parse", "HEAD"])?
+            .trim()
+            .to_string();
+        Ok(sha)
+    }
+
     /// List files currently in a conflicted (unmerged) state in the worktree.
     pub fn get_conflicted_files(&self, worktree_path: &Path) -> Result<Vec<String>, GitCliError> {
         // `--diff-filter=U` lists paths with unresolved conflicts

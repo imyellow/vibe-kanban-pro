@@ -608,6 +608,20 @@ export const attemptsApi = {
     );
     return handleApiResponse<void>(response);
   },
+
+  revertMerge: async (
+    attemptId: string,
+    data: { repo_id: string }
+  ): Promise<void> => {
+    const response = await makeRequest(
+      `/api/task-attempts/${attemptId}/merge/revert`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+    return handleApiResponse<void>(response);
+  },
   generateMergeCommitMessage: async (
     attemptId: string,
     data: GenerateMergeCommitMessageRequest

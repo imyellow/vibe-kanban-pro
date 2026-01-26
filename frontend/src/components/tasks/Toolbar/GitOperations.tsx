@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   CheckCircle,
   ExternalLink,
+  Undo2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button.tsx';
 import {
@@ -27,6 +28,7 @@ import RepoSelector from '@/components/tasks/RepoSelector';
 import { RebaseDialog } from '@/components/dialogs/tasks/RebaseDialog';
 import { CreatePRDialog } from '@/components/dialogs/tasks/CreatePRDialog';
 import { MergeCommitDialog } from '@/components/dialogs/tasks/MergeCommitDialog';
+import { attemptsApi } from '@/lib/api';
 import { useTranslation } from 'react-i18next';
 import { useAttemptRepo } from '@/hooks/useAttemptRepo';
 import { useGitOperations } from '@/hooks/useGitOperations';
@@ -45,14 +47,6 @@ interface GitOperationsProps {
 
 export type GitOperationsInputs = Omit<GitOperationsProps, 'selectedAttempt'>;
 
-const buildDefaultMergeCommitMessage = (task: TaskWithAttemptStatus) => {
-  const idSection = task.id.split('-')[0] || task.id;
-  let message = `${task.title} (vibe-kanban ${idSection})`;
-  if (task.description && task.description.trim()) {
-    message += `\n\n${task.description.trim()}`;
-  }
-  return message;
-};
 
 function GitOperations({
   selectedAttempt,
@@ -77,6 +71,7 @@ function GitOperations({
   const [merging, setMerging] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [rebasing, setRebasing] = useState(false);
+  const [reverting, setReverting] = useState(false);
   const [mergeSuccess, setMergeSuccess] = useState(false);
   const [pushSuccess, setPushSuccess] = useState(false);
 
@@ -186,7 +181,19 @@ function GitOperations({
     const repoId = getSelectedRepoId();
     if (!repoId) return;
 
-    const defaultMessage = buildDefaultMergeCommitMessage(task);
+    // 获取该分支的最后一条提交信息作为默认信息
+    let defaultMessage = '';
+    try {
+      const lastCommit = await attemptsApi.getLastCommitMessage(
+        selectedAttempt.id,
+        repoId
+      );
+      defaultMessage = lastCommit.message;
+    } catch (error) {
+      console.error('Failed to get last commit message:', error);
+      // 如果获取失败，使用空字符串
+      defaultMessage = '';
+    }
 
     try {
       const result = await MergeCommitDialog.show({
@@ -275,6 +282,28 @@ function GitOperations({
       }
     } catch (error) {
       // User cancelled - do nothing
+    }
+  };
+
+  const handleRevertMergeClick = async () => {
+    const repoId = getSelectedRepoId();
+    if (!repoId) return;
+
+    // 确认用户想要撤销合并
+    if (!window.confirm(t('git.revert.confirmMessage'))) {
+      return;
+    }
+
+    try {
+      setReverting(true);
+      await attemptsApi.revertMerge(selectedAttempt.id, { repo_id: repoId });
+      // 刷新页面或触发重新获取分支状态
+      window.location.reload();
+    } catch (error) {
+      console.error('Failed to revert merge:', error);
+      alert(t('git.revert.failed'));
+    } finally {
+      setReverting(false);
     }
   };
 
@@ -526,6 +555,23 @@ function GitOperations({
               <GitBranchIcon className="h-3.5 w-3.5" />
               <span className="truncate max-w-[10ch]">{mergeButtonLabel}</span>
             </Button>
+
+            {/* 撤销合并按钮 - 只在有 direct merge 时显示 */}
+            {mergeInfo.latestMerge?.type === 'direct' && (
+              <Button
+                onClick={handleRevertMergeClick}
+                disabled={reverting || isAttemptRunning}
+                variant="outline"
+                size="xs"
+                className="border-destructive text-destructive hover:bg-destructive gap-1 shrink-0"
+                aria-label={t('git.revert.button')}
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+                <span className="truncate max-w-[10ch]">
+                  {reverting ? t('git.revert.reverting') : t('git.revert.button')}
+                </span>
+              </Button>
+            )}
 
             <Button
               onClick={handlePRButtonClick}

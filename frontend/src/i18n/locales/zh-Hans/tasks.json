@@ -367,6 +367,12 @@
       "confirm": "合并",
       "generateError": "生成提交信息失败"
     },
+    "revert": {
+      "button": "撤销合并",
+      "reverting": "撤销中...",
+      "confirmMessage": "您确定要撤销上一次合并吗？这将创建一个新的提交来撤销合并操作。",
+      "failed": "撤销合并失败，请重试。"
+    },
     "createRepo": {
       "dialog": {
         "title": "创建新仓库",
