@@ -171,7 +171,12 @@ impl ClaudeAgentClient {
                 serde_json::json!({
                     "decision": "block",
                     "reason": format!(
-                        "There are uncommitted changes. Please stage and commit them now with a descriptive commit message.{}",
+                        "There are uncommitted changes. Please stage and commit them now following these rules:\n\
+                        - Use Chinese Conventional Commits format for the first line (e.g., \"fix(ui): 修复按钮点击无响应问题\")\n\
+                        - Keep the first line concise (<= 72 characters)\n\
+                        - If needed, add a blank line and then 1-3 sentences in Chinese explaining what changed and why\n\
+                        - Focus on WHAT was changed and WHY, not generic updates\n\n\
+                        Uncommitted changes:\n{}",
                         status
                     )
                 })
