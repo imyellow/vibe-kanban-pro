@@ -71,7 +71,7 @@ function ProjectCard({ project, isFocused, setError, onEdit }: Props) {
     {
       key: 'inreview',
       label: 'review',
-      color: 'text-teal-600 dark:text-teal-400',
+      color: 'text-[#db7806]',
     },
     {
       key: 'done',
