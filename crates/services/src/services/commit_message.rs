@@ -105,6 +105,11 @@ pub fn build_diff_context(diffs: &[Diff]) -> String {
     sections.join("\n")
 }
 
+/// Get the commit message language from environment variable
+fn get_commit_language() -> String {
+    std::env::var("DEEPSEEK_COMMIT_LANGUAGE").unwrap_or_else(|_| "English".to_string())
+}
+
 /// Build commit message prompt for task branch commits
 pub fn build_branch_commit_prompt(
     task_title: &str,
@@ -115,19 +120,21 @@ pub fn build_branch_commit_prompt(
 ) -> String {
     let title = task_title.trim();
     let description = task_description.unwrap_or("").trim();
+    let language = get_commit_language();
 
-    let mut prompt = String::from(
-        "你是一个 Git 提交信息生成器。\n\
-请生成中文的标准 Git commit message（用于任务分支提交）。\n\n\
-规则：\n\
-- 只输出提交信息本体，不要附加解释、编号或代码块。\n\
-- 第一行使用 Conventional Commits 格式，例如：\n\
-  fix(ui): 修复按钮点击无响应问题\n\
-  docs: 更新API接口文档\n\
-  refactor(core): 重构登录模块代码结构\n\
-- 第一行尽量简洁（<= 72 字符）。\n\
-- 如需正文，第二行留空，从第三行开始写 1-3 句中文说明。\n\
-- 重点说明「改了什么、为什么改」。避免泛泛的「更新文件/合并分支」。\n\n",
+    let mut prompt = format!(
+        "You are a Git commit message generator.\n\
+Please generate a standard Git commit message in {language} (for task branch commits).\n\n\
+Rules:\n\
+- Output only the commit message itself, without explanations, numbering, or code blocks.\n\
+- Use Conventional Commits format for the first line, e.g.:\n\
+  fix(ui): fix button click not responding\n\
+  docs: update API documentation\n\
+  refactor(core): restructure login module code\n\
+- Keep the first line concise (<= 72 characters).\n\
+- If a body is needed, leave the second line blank, then write 1-3 sentences starting from the third line.\n\
+- Focus on explaining \"what changed and why\". Avoid generic messages like \"update files/merge branch\".\n\
+- IMPORTANT: The commit message MUST be written in {language}.\n\n",
     );
 
     prompt.push_str(&format!("Task title: {}\n", title));
