@@ -43,7 +43,7 @@ function ProjectOptionContent({
         // Use project creation time if no tasks
         onLatestTaskTime(
           project.id,
-          new Date(project.created_at as string).getTime()
+          new Date(project.created_at).getTime()
         );
       }
     }
@@ -169,8 +169,8 @@ export function ProjectSelector({ currentProjectId }: ProjectSelectorProps) {
       }
       // Otherwise sort by project creation time
       return (
-        new Date(b.created_at as string).getTime() -
-        new Date(a.created_at as string).getTime()
+        new Date(b.created_at).getTime() -
+        new Date(a.created_at).getTime()
       );
     });
   }, [projects, latestTaskTimes]);
