@@ -46,7 +46,7 @@ use services::services::{
     config::Config,
     container::{ContainerError, ContainerRef, ContainerService},
     diff_stream::{self, DiffStreamHandle},
-    git::{DiffTarget, GitCli, GitService},
+    git::{Commit, DiffTarget, GitCli, GitService},
     image::ImageService,
     notification::NotificationService,
     queued_message::QueuedMessageService,
@@ -308,6 +308,14 @@ impl LocalContainerService {
             .map(|r| r.target_branch.clone())
             .unwrap_or_else(|| "main".to_string());
 
+        // Try to get execution process repo states to find before_head_commit
+        let repo_states = ExecutionProcessRepoState::find_by_execution_process_id(
+            &self.db.pool,
+            ctx.execution_process.id,
+        )
+        .await
+        .ok();
+
         // Collect diffs from all repos with uncommitted changes
         let mut all_diffs = Vec::new();
         for repo in &ctx.repos {
@@ -323,20 +331,54 @@ impl LocalContainerService {
                 .map(|wr| wr.target_branch.as_str())
                 .unwrap_or("main");
 
-            // Get base commit (merge base between workspace branch and target branch)
-            let base_commit = match self.git.get_base_commit(
-                &repo.path,
-                &ctx.workspace.branch,
-                repo_target_branch,
-            ) {
-                Ok(commit) => commit,
-                Err(e) => {
-                    tracing::debug!("Failed to get base commit for repo {}: {}", repo.name, e);
-                    continue;
+            // Try to get before_head_commit for incremental diff
+            let before_head_sha = repo_states
+                .as_ref()
+                .and_then(|states| states.iter().find(|s| s.repo_id == repo.id))
+                .and_then(|s| s.before_head_commit.as_ref());
+
+            // Determine base commit for diff:
+            // 1. If before_head_commit exists, use it (incremental diff from this execution)
+            // 2. Otherwise, fall back to merge base (for first commit on branch)
+            let base_commit = if let Some(before_head_sha) = before_head_sha {
+                match git2::Oid::from_str(before_head_sha) {
+                    Ok(oid) => Commit::new(oid),
+                    Err(e) => {
+                        tracing::debug!(
+                            "Failed to parse before_head_commit '{}' for repo {}: {}. Falling back to merge base.",
+                            before_head_sha,
+                            repo.name,
+                            e
+                        );
+                        match self.git.get_base_commit(
+                            &repo.path,
+                            &ctx.workspace.branch,
+                            repo_target_branch,
+                        ) {
+                            Ok(commit) => commit,
+                            Err(e) => {
+                                tracing::debug!("Failed to get merge base commit for repo {}: {}", repo.name, e);
+                                continue;
+                            }
+                        }
+                    }
+                }
+            } else {
+                // No before_head_commit, use merge base (first commit scenario)
+                match self.git.get_base_commit(
+                    &repo.path,
+                    &ctx.workspace.branch,
+                    repo_target_branch,
+                ) {
+                    Ok(commit) => commit,
+                    Err(e) => {
+                        tracing::debug!("Failed to get merge base commit for repo {}: {}", repo.name, e);
+                        continue;
+                    }
                 }
             };
 
-            // Get worktree diffs (all changes since base commit)
+            // Get worktree diffs (changes since base commit)
             match self.git.get_diffs(
                 DiffTarget::Worktree {
                     worktree_path: &repo_path,

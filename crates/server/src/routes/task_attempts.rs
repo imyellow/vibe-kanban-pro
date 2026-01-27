@@ -443,6 +443,25 @@ pub struct LastCommitMessageResponse {
 
 const MAX_DIFF_CONTEXT_CHARS: usize = 12000;
 
+#[derive(Debug, Deserialize, TS)]
+pub struct IncrementalDiffQuery {
+    pub repo_id: Uuid,
+}
+
+#[derive(Debug, Serialize, TS)]
+pub struct IncrementalDiffResponse {
+    pub diffs: Vec<utils::diff::Diff>,
+    pub base_commit: Option<String>,
+    pub base_type: DiffBaseType,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum DiffBaseType {
+    LastMerge,
+    MergeBase,
+}
+
 #[derive(Debug, Deserialize, Serialize, TS)]
 pub struct PushTaskAttemptRequest {
     pub repo_id: Uuid,
@@ -731,6 +750,100 @@ pub async fn get_last_commit_message(
     Ok(ResponseJson(ApiResponse::success(
         LastCommitMessageResponse { message },
     )))
+}
+
+/// Get incremental diff for merge commit message generation.
+/// Uses the last merge commit as the base if available, otherwise falls back to merge base.
+#[axum::debug_handler]
+pub async fn get_incremental_diff(
+    Extension(workspace): Extension<Workspace>,
+    State(deployment): State<DeploymentImpl>,
+    Query(query): Query<IncrementalDiffQuery>,
+) -> Result<ResponseJson<ApiResponse<IncrementalDiffResponse>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    let workspace_repo =
+        WorkspaceRepo::find_by_workspace_and_repo_id(pool, workspace.id, query.repo_id)
+            .await?
+            .ok_or(RepoError::NotFound)?;
+
+    let repo = Repo::find_by_id(pool, workspace_repo.repo_id)
+        .await?
+        .ok_or(RepoError::NotFound)?;
+
+    let container_ref = deployment
+        .container()
+        .ensure_container_exists(&workspace)
+        .await?;
+    let workspace_path = Path::new(&container_ref);
+    let worktree_path = workspace_path.join(&repo.name);
+
+    // Try to find the last merge with a commit for this workspace and repo
+    let last_merge = Merge::find_latest_with_commit_by_workspace_and_repo(
+        pool,
+        workspace.id,
+        query.repo_id,
+    )
+    .await?;
+
+    // Determine the base commit for diff
+    let (base_commit, base_type, base_commit_str) = if let Some(ref merge) = last_merge {
+        if let Some(merge_commit) = merge.merge_commit() {
+            // Use the last merge commit as base
+            match git2::Oid::from_str(&merge_commit) {
+                Ok(oid) => (
+                    services::services::git::Commit::new(oid),
+                    DiffBaseType::LastMerge,
+                    Some(merge_commit),
+                ),
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse last merge commit '{}': {}. Falling back to merge base.",
+                        merge_commit,
+                        e
+                    );
+                    // Fall back to merge base
+                    let commit = deployment.git().get_base_commit(
+                        &repo.path,
+                        &workspace.branch,
+                        &workspace_repo.target_branch,
+                    )?;
+                    (commit, DiffBaseType::MergeBase, None)
+                }
+            }
+        } else {
+            // No merge commit available, use merge base
+            let commit = deployment.git().get_base_commit(
+                &repo.path,
+                &workspace.branch,
+                &workspace_repo.target_branch,
+            )?;
+            (commit, DiffBaseType::MergeBase, None)
+        }
+    } else {
+        // No previous merge, use merge base
+        let commit = deployment.git().get_base_commit(
+            &repo.path,
+            &workspace.branch,
+            &workspace_repo.target_branch,
+        )?;
+        (commit, DiffBaseType::MergeBase, None)
+    };
+
+    // Get worktree diffs from base commit
+    let diffs = deployment.git().get_diffs(
+        DiffTarget::Worktree {
+            worktree_path: &worktree_path,
+            base_commit: &base_commit,
+        },
+        None,
+    )?;
+
+    Ok(ResponseJson(ApiResponse::success(IncrementalDiffResponse {
+        diffs,
+        base_commit: base_commit_str,
+        base_type,
+    })))
 }
 
 pub async fn push_task_attempt_branch(
@@ -1976,6 +2089,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         .route("/merge", post(merge_task_attempt))
         .route("/merge/revert", post(revert_merge))
         .route("/merge/commit-message", post(generate_merge_commit_message))
+        .route("/incremental-diff", get(get_incremental_diff))
         .route("/last-commit-message", get(get_last_commit_message))
         .route("/push", post(push_task_attempt_branch))
         .route("/push/force", post(force_push_task_attempt_branch))

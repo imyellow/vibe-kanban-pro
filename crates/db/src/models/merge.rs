@@ -300,6 +300,47 @@ impl Merge {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    /// Find the latest merge with a merge_commit for a workspace and repo.
+    /// This is used to determine the diff base for incremental commit message generation.
+    /// Returns the most recent merge that has a merge_commit (either direct merge or merged PR).
+    pub async fn find_latest_with_commit_by_workspace_and_repo(
+        pool: &SqlitePool,
+        workspace_id: Uuid,
+        repo_id: Uuid,
+    ) -> Result<Option<Self>, sqlx::Error> {
+        // Query for the latest merge that has a merge_commit set
+        // For direct merges: merge_commit is always set
+        // For PR merges: pr_merge_commit_sha is set when the PR is merged
+        let row = sqlx::query_as!(
+            MergeRow,
+            r#"SELECT
+                id as "id!: Uuid",
+                workspace_id as "workspace_id!: Uuid",
+                repo_id as "repo_id!: Uuid",
+                merge_type as "merge_type!: MergeType",
+                merge_commit,
+                pr_number,
+                pr_url,
+                pr_status as "pr_status?: MergeStatus",
+                pr_merged_at as "pr_merged_at?: DateTime<Utc>",
+                pr_merge_commit_sha,
+                target_branch_name as "target_branch_name!: String",
+                created_at as "created_at!: DateTime<Utc>"
+            FROM merges
+            WHERE workspace_id = $1
+              AND repo_id = $2
+              AND (merge_commit IS NOT NULL OR pr_merge_commit_sha IS NOT NULL)
+            ORDER BY created_at DESC
+            LIMIT 1"#,
+            workspace_id,
+            repo_id
+        )
+        .fetch_optional(pool)
+        .await?;
+
+        Ok(row.map(Into::into))
+    }
+
     /// Get the latest PR status for each workspace (for workspace summaries)
     /// Returns a map of workspace_id -> MergeStatus for workspaces that have PRs
     pub async fn get_latest_pr_status_for_workspaces(
