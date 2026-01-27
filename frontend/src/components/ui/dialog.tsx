@@ -126,7 +126,7 @@ const Dialog = React.forwardRef<
       >
         {!uncloseable && (
           <button
-            className="absolute right-6 top-6 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 z-10"
+            className="absolute right-3 top-3 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 z-10"
             onClick={() => onOpenChange?.(false)}
           >
             <X className="h-4 w-4" />
