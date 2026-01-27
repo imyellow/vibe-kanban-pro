@@ -57,7 +57,6 @@ import TaskAttemptPanel from '@/components/panels/TaskAttemptPanel';
 import TaskPanel from '@/components/panels/TaskPanel';
 import TodoPanel from '@/components/tasks/TodoPanel';
 import { NewCard, NewCardHeader } from '@/components/ui/new-card';
-import { ProjectSelector } from '@/components/projects/ProjectSelector';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -751,52 +750,41 @@ export function ProjectTasks() {
       : `${truncated}...`;
   };
 
-  const kanbanContent = (
-    <div className="h-full flex flex-col">
-      {/* Project Selector Header */}
-      <div className="shrink-0 border-b bg-background px-4 py-2">
-        {projectId && <ProjectSelector currentProjectId={projectId} />}
+  const kanbanContent =
+    tasks.length === 0 ? (
+      <div className="max-w-7xl mx-auto mt-8">
+        <Card>
+          <CardContent className="text-center py-8">
+            <p className="text-muted-foreground">{t('empty.noTasks')}</p>
+            <Button className="mt-4" onClick={handleCreateNewTask}>
+              <Plus className="h-4 w-4 mr-2" />
+              {t('empty.createFirst')}
+            </Button>
+          </CardContent>
+        </Card>
       </div>
-
-      {/* Kanban Board Content */}
-      <div className="flex-1 min-h-0">
-        {tasks.length === 0 ? (
-          <div className="max-w-7xl mx-auto mt-8">
-            <Card>
-              <CardContent className="text-center py-8">
-                <p className="text-muted-foreground">{t('empty.noTasks')}</p>
-                <Button className="mt-4" onClick={handleCreateNewTask}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  {t('empty.createFirst')}
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        ) : !hasVisibleTasks ? (
-          <div className="max-w-7xl mx-auto mt-8">
-            <Card>
-              <CardContent className="text-center py-8">
-                <p className="text-muted-foreground">
-                  {t('empty.noSearchResults')}
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        ) : (
-          <div className="w-full h-full overflow-x-auto overflow-y-auto overscroll-x-contain">
-            <TaskKanbanBoard
-              columns={kanbanColumns}
-              onDragEnd={handleDragEnd}
-              onViewTaskDetails={handleViewTaskDetails}
-              selectedTaskId={selectedTask?.id}
-              onCreateTask={handleCreateNewTask}
-              projectId={projectId!}
-            />
-          </div>
-        )}
+    ) : !hasVisibleTasks ? (
+      <div className="max-w-7xl mx-auto mt-8">
+        <Card>
+          <CardContent className="text-center py-8">
+            <p className="text-muted-foreground">
+              {t('empty.noSearchResults')}
+            </p>
+          </CardContent>
+        </Card>
       </div>
-    </div>
-  );
+    ) : (
+      <div className="w-full h-full overflow-x-auto overflow-y-auto overscroll-x-contain">
+        <TaskKanbanBoard
+          columns={kanbanColumns}
+          onDragEnd={handleDragEnd}
+          onViewTaskDetails={handleViewTaskDetails}
+          selectedTaskId={selectedTask?.id}
+          onCreateTask={handleCreateNewTask}
+          projectId={projectId!}
+        />
+      </div>
+    );
 
   const rightHeader = selectedTask ? (
     <NewCardHeader
