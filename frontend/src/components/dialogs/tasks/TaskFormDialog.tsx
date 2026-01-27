@@ -407,7 +407,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
       >
         <div
           {...getRootProps()}
-          className="h-full flex flex-col gap-6 relative min-h-0"
+          className="h-full flex flex-col gap-6 relative min-h-0 pt-2"
         >
           <input {...getInputProps()} />
           {/* Drag overlay */}
@@ -431,7 +431,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
                 onChange={(e) => field.handleChange(e.target.value)}
                 placeholder={t('taskFormDialog.titlePlaceholder')}
                 disabled={isSubmitting}
-                className="text-base pr-10"
+                className="text-base pr-12"
                 autoFocus
               />
             )}

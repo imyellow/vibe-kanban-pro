@@ -242,11 +242,19 @@ function WYSIWYGEditor({
                 transformers={extendedTransformers}
               />
               {!disabled && <ToolbarPlugin />}
-              <div className="relative flex-1">
+              <div
+                className="relative flex-1 flex flex-col cursor-text"
+                onClick={(e) => {
+                  if (!disabled && e.target === e.currentTarget) {
+                    const contentEditable = e.currentTarget.querySelector('[contenteditable="true"]') as HTMLElement;
+                    contentEditable?.focus();
+                  }
+                }}
+              >
                 <RichTextPlugin
                   contentEditable={
                     <ContentEditable
-                      className="outline-none min-h-full"
+                      className="outline-none flex-1"
                       aria-label={
                         disabled ? 'Markdown content' : 'Markdown editor'
                       }
