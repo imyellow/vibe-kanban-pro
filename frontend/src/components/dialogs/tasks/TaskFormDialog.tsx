@@ -403,10 +403,11 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
         open={modal.visible}
         onOpenChange={handleDialogClose}
         uncloseable={showDiscardWarning}
+        className="w-[70vw] max-w-none h-[60vh] my-[20vh]"
       >
         <div
           {...getRootProps()}
-          className="h-full flex flex-col gap-4 p-4 relative min-h-0"
+          className="h-full flex flex-col gap-6 relative min-h-0"
         >
           <input {...getInputProps()} />
           {/* Drag overlay */}
@@ -439,10 +440,10 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
           {/* Description */}
           <form.Field name="description">
             {(field) => (
-              <div className="border p-3">
+              <div className="border p-3 flex-1 min-h-0 flex flex-col">
                 <WYSIWYGEditor
                   placeholder={t('taskFormDialog.descriptionPlaceholder')}
-                  className="w-full h-24 overflow-auto"
+                  className="w-full flex-1 min-h-0 overflow-auto"
                   value={field.state.value}
                   onChange={(desc) => field.handleChange(desc)}
                   disabled={isSubmitting}
@@ -607,7 +608,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
           )}
 
           {/* Actions */}
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-4 pt-2 border-t border-border/50">
             {/* Attach Image*/}
             <div className="flex items-center gap-2">
               <Button
@@ -621,8 +622,8 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
               </Button>
             </div>
 
-            {/* Autostart switch */}
-            <div className="flex items-center gap-3">
+            {/* Autostart switch and Create button */}
+            <div className="flex items-center gap-4">
               {!editMode && (
                 <form.Field name="autoStart">
                   {(field) => (
