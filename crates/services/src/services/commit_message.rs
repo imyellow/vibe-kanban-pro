@@ -200,8 +200,14 @@ pub async fn generate_commit_message(prompt: &str) -> Result<String, CommitMessa
     };
 
     let client = reqwest::Client::new();
+
+    let base_url = std::env::var("DEEPSEEK_BASE_URL")
+        .unwrap_or_else(|_| "https://api.deepseek.com/v1".to_string());
+    
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+
     let response = client
-        .post("https://api.deepseek.com/v1/chat/completions")
+        .post(&url)
         .bearer_auth(api_key)
         .json(&payload)
         .send()

@@ -15,6 +15,14 @@
   <a href="https://deepwiki.com/BloopAI/vibe-kanban"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
 </p>
 
+> ## **Fork Features**:
+> Compared to the original vibe-kanban, this version adds and fixes the following:
+> 1. **DeepSeek Commit Messages**: Generates commit messages using DeepSeek. You can switch to any other LLM by modifying `DEEPSEEK_BASE_URL`. (Configure `DEEPSEEK_API_KEY` and `DEEPSEEK_BASE_URL` in `.env`).
+> 2. **Claude Code Fix**: Fixed an issue where `Environment Variables` configured in settings were ignored when Claude Code uses `settings.json`.
+> 3. **Merge Review**: Added functionality to view and edit commit messages during a merge.
+> 4. **Undo Merge**: Added support for undoing a merge operation.
+
+
 <h1 align="center">
   <a href="https://jobs.polymer.co/vibe-kanban?source=github"><strong>We're hiring!</strong></a>
 </h1>
@@ -39,7 +47,9 @@ You can watch a video overview [here](https://youtu.be/TFT3KnZOOAk).
 Make sure you have authenticated with your favourite coding agent. A full list of supported coding agents can be found in the [docs](https://vibekanban.com/docs). Then in your terminal run:
 
 ```bash
-npx vibe-kanban
+pnpm install
+pnpm run build:local
+pnpm run start:local
 ```
 
 ## Documentation
