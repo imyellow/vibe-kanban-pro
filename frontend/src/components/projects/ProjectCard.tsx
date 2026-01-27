@@ -163,7 +163,7 @@ function ProjectCard({ project, isFocused, setError, onEdit }: Props) {
               {hasInProgress && (
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200/70 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  In Progress
+                  In Progress {statusCounts.inprogress}
                 </span>
               )}
             </div>
