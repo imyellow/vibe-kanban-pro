@@ -84,6 +84,9 @@ function ProjectCard({ project, isFocused, setError, onEdit }: Props) {
       color: 'text-rose-600 dark:text-rose-400',
     },
   ] as const;
+  const visibleStatusItems = tasksLoading
+    ? statusItems
+    : statusItems.filter((item) => statusCounts[item.key] > 0);
 
   const { unlinkProject } = useProjectMutations({
     onUnlinkError: (error) => {
@@ -164,26 +167,28 @@ function ProjectCard({ project, isFocused, setError, onEdit }: Props) {
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2 py-1 text-[11px] text-muted-foreground shadow-inner whitespace-nowrap">
-              {statusItems.map((item, index) => (
-                <span
-                  key={item.key}
-                  className="inline-flex items-center gap-1"
-                >
-                  <span className="uppercase tracking-wide">{item.label}</span>
+            {visibleStatusItems.length > 0 && (
+              <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2 py-1 text-[11px] text-muted-foreground shadow-inner whitespace-nowrap">
+                {visibleStatusItems.map((item, index) => (
                   <span
-                    className={`font-semibold tabular-nums ${item.color} ${
-                      tasksLoading ? 'opacity-60' : ''
-                    }`}
+                    key={item.key}
+                    className="inline-flex items-center gap-1"
                   >
-                    {tasksLoading ? '--' : statusCounts[item.key]}
+                    <span className="uppercase tracking-wide">{item.label}</span>
+                    <span
+                      className={`font-semibold tabular-nums ${item.color} ${
+                        tasksLoading ? 'opacity-60' : ''
+                      }`}
+                    >
+                      {tasksLoading ? '--' : statusCounts[item.key]}
+                    </span>
+                    {index < visibleStatusItems.length - 1 && (
+                      <span className="text-muted-foreground/40">|</span>
+                    )}
                   </span>
-                  {index < statusItems.length - 1 && (
-                    <span className="text-muted-foreground/40">|</span>
-                  )}
-                </span>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <DropdownMenu>

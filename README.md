@@ -21,6 +21,7 @@
 > 2. **Claude Code Fix**: Fixed an issue where `Environment Variables` configured in settings were ignored when Claude Code uses `settings.json`.
 > 3. **Merge Review**: Added functionality to view and edit commit messages during a merge.
 > 4. **Undo Merge**: Added support for undoing a merge operation.
+> 5. **Project Card Status Summary**: Projects page cards now show per-status task counts and an in-card loading indicator when there are In Progress tasks.
 
 
 <h1 align="center">
