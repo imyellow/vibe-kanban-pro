@@ -4056,6 +4056,7 @@ dependencies = [
  "deployment",
  "executors",
  "futures",
+ "git2",
  "globwalk",
  "json-patch",
  "nix 0.29.0",

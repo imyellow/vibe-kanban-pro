@@ -95,6 +95,7 @@ import {
   CreateWorkspaceFromPrBody,
   CreateWorkspaceFromPrResponse,
   CreateFromPrError,
+  IncrementalDiffResponse,
 } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { createWorkspaceWithSession } from '@/types/attempt';
@@ -827,6 +828,17 @@ export const attemptsApi = {
       CreateWorkspaceFromPrResponse,
       CreateFromPrError
     >(response);
+  },
+
+  /** Get incremental diff for merge commit message generation */
+  getIncrementalDiff: async (
+    attemptId: string,
+    repoId: string
+  ): Promise<IncrementalDiffResponse> => {
+    const response = await makeRequest(
+      `/api/task-attempts/${attemptId}/incremental-diff?repo_id=${encodeURIComponent(repoId)}`
+    );
+    return handleApiResponse<IncrementalDiffResponse>(response);
   },
 };
 
