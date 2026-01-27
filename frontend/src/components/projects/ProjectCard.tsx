@@ -17,6 +17,7 @@ import {
   ExternalLink,
   FolderOpen,
   Link2,
+  Loader2,
   MoreHorizontal,
   Trash2,
   Unlink,
@@ -29,6 +30,7 @@ import { projectsApi } from '@/lib/api';
 import { LinkProjectDialog } from '@/components/dialogs/projects/LinkProjectDialog';
 import { useTranslation } from 'react-i18next';
 import { useProjectMutations } from '@/hooks/useProjectMutations';
+import { useProjectTasks } from '@/hooks/useProjectTasks';
 
 type Props = {
   project: Project;
@@ -45,6 +47,43 @@ function ProjectCard({ project, isFocused, setError, onEdit }: Props) {
 
   const { data: repos } = useProjectRepos(project.id);
   const isSingleRepoProject = repos?.length === 1;
+  const { tasksByStatus, isLoading: tasksLoading } = useProjectTasks(project.id);
+
+  const statusCounts = {
+    todo: tasksByStatus.todo.length,
+    inprogress: tasksByStatus.inprogress.length,
+    inreview: tasksByStatus.inreview.length,
+    done: tasksByStatus.done.length,
+    cancelled: tasksByStatus.cancelled.length,
+  };
+  const hasInProgress = statusCounts.inprogress > 0;
+  const statusItems = [
+    {
+      key: 'todo',
+      label: 'todo',
+      color: 'text-slate-600 dark:text-slate-300',
+    },
+    {
+      key: 'inprogress',
+      label: 'progress',
+      color: 'text-amber-600 dark:text-amber-400',
+    },
+    {
+      key: 'inreview',
+      label: 'review',
+      color: 'text-teal-600 dark:text-teal-400',
+    },
+    {
+      key: 'done',
+      label: 'done',
+      color: 'text-emerald-600 dark:text-emerald-400',
+    },
+    {
+      key: 'cancelled',
+      label: 'cancelled',
+      color: 'text-rose-600 dark:text-rose-400',
+    },
+  ] as const;
 
   const { unlinkProject } = useProjectMutations({
     onUnlinkError: (error) => {
@@ -106,14 +145,46 @@ function ProjectCard({ project, isFocused, setError, onEdit }: Props) {
 
   return (
     <Card
-      className={`hover:shadow-md transition-shadow cursor-pointer focus:ring-2 focus:ring-primary outline-none border`}
+      className="group relative cursor-pointer overflow-hidden border bg-card/80 shadow-sm outline-none transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-primary/60"
       onClick={() => navigate(`/projects/${project.id}/tasks`)}
       tabIndex={isFocused ? 0 : -1}
       ref={ref}
     >
-      <CardHeader>
-        <div className="flex items-start justify-between">
-          <CardTitle className="text-lg">{project.name}</CardTitle>
+      <CardHeader className="space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <CardTitle className="text-lg leading-tight">
+                {project.name}
+              </CardTitle>
+              {hasInProgress && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200/70 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  In Progress
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2 py-1 text-[11px] text-muted-foreground shadow-inner whitespace-nowrap">
+              {statusItems.map((item, index) => (
+                <span
+                  key={item.key}
+                  className="inline-flex items-center gap-1"
+                >
+                  <span className="uppercase tracking-wide">{item.label}</span>
+                  <span
+                    className={`font-semibold tabular-nums ${item.color} ${
+                      tasksLoading ? 'opacity-60' : ''
+                    }`}
+                  >
+                    {tasksLoading ? '--' : statusCounts[item.key]}
+                  </span>
+                  {index < statusItems.length - 1 && (
+                    <span className="text-muted-foreground/40">|</span>
+                  )}
+                </span>
+              ))}
+            </div>
+          </div>
           <div className="flex items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
