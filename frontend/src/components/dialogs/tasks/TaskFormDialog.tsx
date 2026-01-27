@@ -440,20 +440,22 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
           {/* Description */}
           <form.Field name="description">
             {(field) => (
-              <div className="border p-3 flex-1 min-h-0 flex flex-col">
-                <WYSIWYGEditor
-                  placeholder={t('taskFormDialog.descriptionPlaceholder')}
-                  className="w-full flex-1 min-h-0 overflow-auto"
-                  value={field.state.value}
-                  onChange={(desc) => field.handleChange(desc)}
-                  disabled={isSubmitting}
-                  projectId={projectId}
-                  onPasteFiles={onDrop}
-                  onCmdEnter={primaryAction}
-                  onShiftCmdEnter={handleSubmitCreateOnly}
-                  taskId={editMode ? props.task.id : undefined}
-                  localImages={localImages}
-                />
+              <div className="border p-3 flex-1 min-h-0 overflow-hidden">
+                <div className="h-full overflow-auto">
+                  <WYSIWYGEditor
+                    placeholder={t('taskFormDialog.descriptionPlaceholder')}
+                    className="min-h-[200px]"
+                    value={field.state.value}
+                    onChange={(desc) => field.handleChange(desc)}
+                    disabled={isSubmitting}
+                    projectId={projectId}
+                    onPasteFiles={onDrop}
+                    onCmdEnter={primaryAction}
+                    onShiftCmdEnter={handleSubmitCreateOnly}
+                    taskId={editMode ? props.task.id : undefined}
+                    localImages={localImages}
+                  />
+                </div>
               </div>
             )}
           </form.Field>
