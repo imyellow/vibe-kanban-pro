@@ -431,7 +431,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
                 onChange={(e) => field.handleChange(e.target.value)}
                 placeholder={t('taskFormDialog.titlePlaceholder')}
                 disabled={isSubmitting}
-                className="text-base"
+                className="text-base pr-10"
                 autoFocus
               />
             )}
@@ -440,22 +440,20 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
           {/* Description */}
           <form.Field name="description">
             {(field) => (
-              <div className="border p-3 flex-1 min-h-0 overflow-hidden">
-                <div className="h-full overflow-auto">
-                  <WYSIWYGEditor
-                    placeholder={t('taskFormDialog.descriptionPlaceholder')}
-                    className="min-h-[200px]"
-                    value={field.state.value}
-                    onChange={(desc) => field.handleChange(desc)}
-                    disabled={isSubmitting}
-                    projectId={projectId}
-                    onPasteFiles={onDrop}
-                    onCmdEnter={primaryAction}
-                    onShiftCmdEnter={handleSubmitCreateOnly}
-                    taskId={editMode ? props.task.id : undefined}
-                    localImages={localImages}
-                  />
-                </div>
+              <div className="border flex-1 min-h-0 overflow-auto p-3">
+                <WYSIWYGEditor
+                  placeholder={t('taskFormDialog.descriptionPlaceholder')}
+                  className="min-h-full"
+                  value={field.state.value}
+                  onChange={(desc) => field.handleChange(desc)}
+                  disabled={isSubmitting}
+                  projectId={projectId}
+                  onPasteFiles={onDrop}
+                  onCmdEnter={primaryAction}
+                  onShiftCmdEnter={handleSubmitCreateOnly}
+                  taskId={editMode ? props.task.id : undefined}
+                  localImages={localImages}
+                />
               </div>
             )}
           </form.Field>

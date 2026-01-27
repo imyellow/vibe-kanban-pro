@@ -229,7 +229,7 @@ function WYSIWYGEditor({
   );
 
   const editorContent = (
-    <div className="wysiwyg text-base">
+    <div className={cn('wysiwyg text-base flex flex-col', className)}>
       <TaskAttemptContext.Provider value={taskAttemptId || workspaceId}>
         <TaskContext.Provider value={taskId}>
           <LocalImagesContext.Provider value={localImages ?? []}>
@@ -242,11 +242,11 @@ function WYSIWYGEditor({
                 transformers={extendedTransformers}
               />
               {!disabled && <ToolbarPlugin />}
-              <div className="relative">
+              <div className="relative flex-1">
                 <RichTextPlugin
                   contentEditable={
                     <ContentEditable
-                      className={cn('outline-none', className)}
+                      className="outline-none min-h-full"
                       aria-label={
                         disabled ? 'Markdown content' : 'Markdown editor'
                       }
