@@ -1252,23 +1252,35 @@ impl GitService {
         let base_commit_oid = base_branch_ref.get().peel_to_commit()?.id();
         tracing::info!("Base branch HEAD commit: {}", base_commit_oid);
 
-        // Collect all commits reachable from base branch
-        // A commit is "merged" if it's reachable from the base branch HEAD
-        let mut base_commits = std::collections::HashSet::new();
-        let mut base_revwalk = repo.revwalk()?;
-        base_revwalk.push(base_commit_oid)?;
-        for oid in base_revwalk {
-            if let Ok(oid) = oid {
-                base_commits.insert(oid);
-            }
-        }
-        tracing::info!("Base branch has {} reachable commits", base_commits.len());
-
         // Get merge base to identify worktree-specific commits
         let merge_base_oid = repo.merge_base(worktree_commit_oid, base_commit_oid)?;
         tracing::info!("Merge base: {}", merge_base_oid);
 
-        // Collect all commits from worktree HEAD
+        // Collect commits that are in base branch but not before merge base
+        let mut base_unique_commits = std::collections::HashSet::new();
+        let mut base_revwalk = repo.revwalk()?;
+        base_revwalk.push(base_commit_oid)?;
+        base_revwalk.hide(merge_base_oid)?;
+        for oid in base_revwalk {
+            if let Ok(oid) = oid {
+                base_unique_commits.insert(oid);
+            }
+        }
+        tracing::info!("Base branch has {} unique commits after fork", base_unique_commits.len());
+
+        // Collect commits from worktree branch but not before merge base
+        let mut worktree_unique_commits = std::collections::HashSet::new();
+        let mut worktree_revwalk = repo.revwalk()?;
+        worktree_revwalk.push(worktree_commit_oid)?;
+        worktree_revwalk.hide(merge_base_oid)?;
+        for oid in worktree_revwalk {
+            if let Ok(oid) = oid {
+                worktree_unique_commits.insert(oid);
+            }
+        }
+        tracing::info!("Worktree branch has {} unique commits after fork", worktree_unique_commits.len());
+
+        // Collect all commits from worktree HEAD for display
         let mut revwalk = repo.revwalk()?;
         revwalk.push(worktree_commit_oid)?;
         revwalk.set_sorting(Sort::TIME)?;
@@ -1279,22 +1291,10 @@ impl GitService {
             let commit = repo.find_commit(oid)?;
 
             // A commit is merged if:
-            // 1. It's reachable from base branch HEAD
-            // 2. AND it's after the merge base (i.e., it's a worktree-specific commit)
-            let is_after_fork = oid != merge_base_oid && {
-                let mut check_revwalk = repo.revwalk().ok();
-                if let Some(ref mut rw) = check_revwalk {
-                    if rw.push(oid).is_ok() && rw.hide(merge_base_oid).is_ok() {
-                        rw.next().is_some()
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            };
-
-            let is_merged = is_after_fork && base_commits.contains(&oid);
+            // 1. It's a worktree-specific commit (after merge base)
+            // 2. AND it also exists in base branch's unique commits
+            let is_worktree_specific = worktree_unique_commits.contains(&oid);
+            let is_merged = is_worktree_specific && base_unique_commits.contains(&oid);
 
             commits.push(CommitInfo {
                 hash: oid.to_string(),
