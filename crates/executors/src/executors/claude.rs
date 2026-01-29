@@ -124,18 +124,44 @@ impl ClaudeCode {
             "--disallowedTools=AskUserQuestion",
         ]);
 
-        // If profile has env configuration, skip user-level settings and pass env via --settings
-        // This ensures profile env vars take precedence over ~/.claude/settings.json
-        if let Some(ref profile_env) = self.cmd.env {
-            if !profile_env.is_empty() {
-                // Skip user-level settings (~/.claude/settings.json) to avoid env conflicts
-                builder = builder.extend_params(["--setting-sources", "project"]);
+        // If profile has env or enabled_plugins configuration, skip user-level settings and pass via --settings
+        // This ensures profile settings take precedence over ~/.claude/settings.json
+        let has_env = self.cmd.env.as_ref().map_or(false, |e| !e.is_empty());
 
-                let settings_json = serde_json::json!({
-                    "env": profile_env
-                });
-                builder = builder.extend_params(["--settings", &settings_json.to_string()]);
+        // Load enabled_plugins from ~/.claude/settings.json only when using direct Claude Code CLI (not router)
+        let enabled_plugins = if self.claude_code_router.unwrap_or(false) {
+            None
+        } else {
+            (|| {
+                let home = std::env::var("HOME").ok()?;
+                let settings_path = PathBuf::from(&home).join(".claude").join("settings.json");
+                let content = std::fs::read_to_string(&settings_path).ok()?;
+                let settings: serde_json::Value = serde_json::from_str(&content).ok()?;
+                settings
+                    .get("enabledPlugins")?
+                    .as_object()
+                    .map(|obj| obj.clone())
+            })()
+        };
+
+        let has_plugins = enabled_plugins.as_ref().map_or(false, |p| !p.is_empty());
+
+        if has_env || has_plugins {
+            // Skip user-level settings (~/.claude/settings.json) to avoid conflicts
+            builder = builder.extend_params(["--setting-sources", "project"]);
+
+            let mut settings_map = serde_json::Map::new();
+
+            if has_env {
+                settings_map.insert("env".to_string(), serde_json::json!(self.cmd.env));
             }
+
+            if has_plugins {
+                settings_map.insert("enabledPlugins".to_string(), serde_json::json!(enabled_plugins));
+            }
+
+            let settings_json = serde_json::Value::Object(settings_map);
+            builder = builder.extend_params(["--settings", &settings_json.to_string()]);
         }
 
         apply_overrides(builder, &self.cmd)
