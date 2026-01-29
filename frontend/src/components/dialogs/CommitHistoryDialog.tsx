@@ -37,6 +37,12 @@ const CommitHistoryDialog = NiceModal.create<CommitHistoryDialogProps>(
       selectedCommit?.hash
     );
 
+    // Reset selected commit and expanded diffs when commits data changes
+    useEffect(() => {
+      setSelectedCommit(null);
+      setExpandedDiffs(new Set());
+    }, [commits]);
+
     // Auto-expand the first diff when diffs are loaded
     useEffect(() => {
       if (diffs && diffs.length > 0) {
