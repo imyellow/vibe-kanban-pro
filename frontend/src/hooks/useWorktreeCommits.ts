@@ -28,5 +28,7 @@ export function useWorktreeCommits(attemptId: string | undefined, repoId: string
       return data.data as CommitInfo[];
     },
     enabled: !!attemptId && !!repoId,
+    refetchOnMount: true,
+    staleTime: 0,
   });
 }
