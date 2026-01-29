@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useWorktreeCommits } from '@/hooks/useWorktreeCommits';
 import { useCommitDiff } from '@/hooks/useCommitDiff';
-import { FileDiffView } from '@/components/diffs/FileDiffView';
+import DiffCard from '@/components/DiffCard';
 import type { CommitInfo } from 'shared/types';
 
 export interface CommitHistoryDialogProps {
@@ -23,6 +23,7 @@ const CommitHistoryDialog = NiceModal.create<CommitHistoryDialogProps>(
   ({ attemptId, repoId }) => {
     const modal = useModal();
     const [selectedCommit, setSelectedCommit] = useState<CommitInfo | null>(null);
+    const [expandedDiffs, setExpandedDiffs] = useState<Set<string>>(new Set());
 
     const { data: commits, isLoading: isLoadingCommits } = useWorktreeCommits(
       attemptId,
@@ -34,6 +35,18 @@ const CommitHistoryDialog = NiceModal.create<CommitHistoryDialogProps>(
       repoId,
       selectedCommit?.hash
     );
+
+    const toggleDiff = (diffId: string) => {
+      setExpandedDiffs((prev) => {
+        const next = new Set(prev);
+        if (next.has(diffId)) {
+          next.delete(diffId);
+        } else {
+          next.add(diffId);
+        }
+        return next;
+      });
+    };
 
     return (
       <Dialog
@@ -141,7 +154,13 @@ const CommitHistoryDialog = NiceModal.create<CommitHistoryDialogProps>(
                         {diffs.length} 个文件已变更
                       </div>
                       {diffs.map((diff, index) => (
-                        <FileDiffView key={index} diff={diff} />
+                        <DiffCard
+                          key={index}
+                          diff={diff}
+                          expanded={expandedDiffs.has(`${index}`)}
+                          onToggle={() => toggleDiff(`${index}`)}
+                          selectedAttempt={null}
+                        />
                       ))}
                     </div>
                   )}

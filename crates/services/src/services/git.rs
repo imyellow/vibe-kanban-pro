@@ -1252,22 +1252,21 @@ impl GitService {
         let base_commit_oid = base_branch_ref.get().peel_to_commit()?.id();
         tracing::info!("Base branch HEAD commit: {}", base_commit_oid);
 
-        // Get merge base (common ancestor)
-        let merge_base_oid = repo.merge_base(worktree_commit_oid, base_commit_oid)?;
-        tracing::info!("Merge base: {}", merge_base_oid);
-
-        // Collect commits that are in base branch but not before merge base
-        // These are commits that were added to base branch after the fork point
-        let mut base_unique_commits = std::collections::HashSet::new();
+        // Collect all commits reachable from base branch
+        // A commit is "merged" if it's reachable from the base branch HEAD
+        let mut base_commits = std::collections::HashSet::new();
         let mut base_revwalk = repo.revwalk()?;
         base_revwalk.push(base_commit_oid)?;
-        base_revwalk.hide(merge_base_oid)?;
         for oid in base_revwalk {
             if let Ok(oid) = oid {
-                base_unique_commits.insert(oid);
+                base_commits.insert(oid);
             }
         }
-        tracing::info!("Base branch has {} unique commits since fork", base_unique_commits.len());
+        tracing::info!("Base branch has {} reachable commits", base_commits.len());
+
+        // Get merge base to identify worktree-specific commits
+        let merge_base_oid = repo.merge_base(worktree_commit_oid, base_commit_oid)?;
+        tracing::info!("Merge base: {}", merge_base_oid);
 
         // Collect all commits from worktree HEAD
         let mut revwalk = repo.revwalk()?;
@@ -1279,9 +1278,23 @@ impl GitService {
             let oid = oid?;
             let commit = repo.find_commit(oid)?;
 
-            // A commit is merged if it exists in the base branch's unique commits
-            // This means it was part of a merge from this worktree to base
-            let is_merged = base_unique_commits.contains(&oid);
+            // A commit is merged if:
+            // 1. It's reachable from base branch HEAD
+            // 2. AND it's after the merge base (i.e., it's a worktree-specific commit)
+            let is_after_fork = oid != merge_base_oid && {
+                let mut check_revwalk = repo.revwalk().ok();
+                if let Some(ref mut rw) = check_revwalk {
+                    if rw.push(oid).is_ok() && rw.hide(merge_base_oid).is_ok() {
+                        rw.next().is_some()
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            };
+
+            let is_merged = is_after_fork && base_commits.contains(&oid);
 
             commits.push(CommitInfo {
                 hash: oid.to_string(),
