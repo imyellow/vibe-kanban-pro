@@ -1,3 +1,4 @@
+use crate::translate::{needs_translation, translate_to_english};
 use regex::Regex;
 use uuid::Uuid;
 
@@ -15,6 +16,23 @@ pub fn git_branch_id(input: &str) -> String {
     // 4. take up to 16 chars, then trim trailing hyphens again
     let cut: String = trimmed.chars().take(16).collect();
     cut.trim_end_matches('-').to_string()
+}
+
+/// Async version of git_branch_id that translates non-English text using DeepSeek API.
+/// If the input contains no ASCII alphanumeric characters (e.g., Chinese-only title),
+/// it will be translated to English first before generating the branch ID.
+pub async fn git_branch_id_with_translation(input: &str) -> String {
+    let text_to_process = if needs_translation(input) {
+        tracing::debug!(
+            "Input '{}' needs translation, calling DeepSeek API",
+            input
+        );
+        translate_to_english(input).await
+    } else {
+        input.to_string()
+    };
+
+    git_branch_id(&text_to_process)
 }
 
 pub fn short_uuid(u: &Uuid) -> String {

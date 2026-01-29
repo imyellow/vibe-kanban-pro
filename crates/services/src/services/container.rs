@@ -47,7 +47,7 @@ use tokio::{sync::RwLock, task::JoinHandle};
 use utils::{
     log_msg::LogMsg,
     msg_store::MsgStore,
-    text::{git_branch_id, short_uuid},
+    text::{git_branch_id_with_translation, short_uuid},
 };
 use uuid::Uuid;
 
@@ -593,7 +593,7 @@ pub trait ContainerService {
     async fn git_branch_prefix(&self) -> String;
 
     async fn git_branch_from_workspace(&self, workspace_id: &Uuid, task_title: &str) -> String {
-        let task_title_id = git_branch_id(task_title);
+        let task_title_id = git_branch_id_with_translation(task_title).await;
         let prefix = self.git_branch_prefix().await;
 
         if prefix.is_empty() {
