@@ -13,6 +13,7 @@ import { useWorktreeCommits } from '@/hooks/useWorktreeCommits';
 import { useCommitDiff } from '@/hooks/useCommitDiff';
 import DiffCard from '@/components/DiffCard';
 import type { CommitInfo } from 'shared/types';
+import { ReviewProvider } from '@/contexts/ReviewProvider';
 
 export interface CommitHistoryDialogProps {
   attemptId: string;
@@ -134,37 +135,39 @@ const CommitHistoryDialog = NiceModal.create<CommitHistoryDialogProps>(
               )}
 
               {selectedCommit && !isLoadingDiffs && diffs && (
-                <div className="p-6">
-                  <div className="mb-4">
-                    <h3 className="font-semibold mb-2">{selectedCommit.message.split('\n')[0]}</h3>
-                    <div className="text-sm text-muted-foreground space-y-1">
-                      <div>提交: {selectedCommit.hash}</div>
-                      <div>作者: {selectedCommit.author_name} &lt;{selectedCommit.author_email}&gt;</div>
-                      <div>时间: {new Date(selectedCommit.timestamp).toLocaleString('zh-CN')}</div>
-                    </div>
-                  </div>
-
-                  {diffs.length === 0 && (
-                    <div className="text-sm text-muted-foreground">此提交无文件变更</div>
-                  )}
-
-                  {diffs.length > 0 && (
-                    <div className="space-y-4">
-                      <div className="text-sm text-muted-foreground mb-2">
-                        {diffs.length} 个文件已变更
+                <ReviewProvider>
+                  <div className="p-6">
+                    <div className="mb-4">
+                      <h3 className="font-semibold mb-2">{selectedCommit.message.split('\n')[0]}</h3>
+                      <div className="text-sm text-muted-foreground space-y-1">
+                        <div>提交: {selectedCommit.hash}</div>
+                        <div>作者: {selectedCommit.author_name} &lt;{selectedCommit.author_email}&gt;</div>
+                        <div>时间: {new Date(selectedCommit.timestamp).toLocaleString('zh-CN')}</div>
                       </div>
-                      {diffs.map((diff, index) => (
-                        <DiffCard
-                          key={index}
-                          diff={diff}
-                          expanded={expandedDiffs.has(`${index}`)}
-                          onToggle={() => toggleDiff(`${index}`)}
-                          selectedAttempt={null}
-                        />
-                      ))}
                     </div>
-                  )}
-                </div>
+
+                    {diffs.length === 0 && (
+                      <div className="text-sm text-muted-foreground">此提交无文件变更</div>
+                    )}
+
+                    {diffs.length > 0 && (
+                      <div className="space-y-4">
+                        <div className="text-sm text-muted-foreground mb-2">
+                          {diffs.length} 个文件已变更
+                        </div>
+                        {diffs.map((diff, index) => (
+                          <DiffCard
+                            key={index}
+                            diff={diff}
+                            expanded={expandedDiffs.has(`${index}`)}
+                            onToggle={() => toggleDiff(`${index}`)}
+                            selectedAttempt={null}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </ReviewProvider>
               )}
             </div>
           </div>
