@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import NiceModal, { useModal } from '@ebay/nice-modal-react';
 import { History, X, GitMerge } from 'lucide-react';
 import { defineModal } from '@/lib/modals';
@@ -36,6 +36,13 @@ const CommitHistoryDialog = NiceModal.create<CommitHistoryDialogProps>(
       repoId,
       selectedCommit?.hash
     );
+
+    // Auto-expand the first diff when diffs are loaded
+    useEffect(() => {
+      if (diffs && diffs.length > 0) {
+        setExpandedDiffs(new Set(['0']));
+      }
+    }, [diffs]);
 
     const toggleDiff = (diffId: string) => {
       setExpandedDiffs((prev) => {
