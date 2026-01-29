@@ -114,6 +114,18 @@ type LastCommitMessageResponse = {
   message: string;
 };
 
+type CommitWorktreeResponse = {
+  success: boolean;
+  message: string;
+  commit_hash?: string;
+};
+
+type UndoCommitResponse = {
+  success: boolean;
+  message: string;
+  reverted_commit?: string;
+};
+
 export class ApiError<E = unknown> extends Error {
   public status?: number;
   public error_data?: E;
@@ -839,6 +851,36 @@ export const attemptsApi = {
       `/api/task-attempts/${attemptId}/incremental-diff?repo_id=${encodeURIComponent(repoId)}`
     );
     return handleApiResponse<IncrementalDiffResponse>(response);
+  },
+
+  /** Commit all changes in the worktree with an auto-generated commit message */
+  commitWorktree: async (
+    attemptId: string,
+    repoId: string
+  ): Promise<CommitWorktreeResponse> => {
+    const response = await makeRequest(
+      `/api/task-attempts/${attemptId}/commit-worktree`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ repo_id: repoId }),
+      }
+    );
+    return handleApiResponse<CommitWorktreeResponse>(response);
+  },
+
+  /** Undo the latest commit in the worktree */
+  undoCommit: async (
+    attemptId: string,
+    repoId: string
+  ): Promise<UndoCommitResponse> => {
+    const response = await makeRequest(
+      `/api/task-attempts/${attemptId}/undo-commit`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ repo_id: repoId }),
+      }
+    );
+    return handleApiResponse<UndoCommitResponse>(response);
   },
 };
 

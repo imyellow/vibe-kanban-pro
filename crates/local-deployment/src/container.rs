@@ -449,7 +449,11 @@ impl LocalContainerService {
 
         match generate_commit_message(&prompt).await {
             Ok(message) => {
-                tracing::info!("Generated commit message using DeepSeek API");
+                tracing::info!(
+                    "Generated commit message using DeepSeek API - length: {}, content: '{}'",
+                    message.len(),
+                    message
+                );
                 Some(message)
             }
             Err(e) => {
@@ -459,7 +463,8 @@ impl LocalContainerService {
         }
     }
 
-    /// Check which repos have uncommitted changes. Fails if any repo is inaccessible.
+    /// Check which repos have uncommitted changes (including untracked files).
+    /// Fails if any repo is inaccessible.
     fn check_repos_for_changes(
         &self,
         workspace_root: &Path,
@@ -468,18 +473,89 @@ impl LocalContainerService {
         let git = GitService::new();
         let mut repos_with_changes = Vec::new();
 
+        tracing::info!(
+            "check_repos_for_changes: checking {} repos for changes",
+            repos.len()
+        );
+
         for repo in repos {
             let worktree_path = workspace_root.join(&repo.name);
 
+            tracing::debug!(
+                "check_repos_for_changes: checking repo '{}' at {:?}",
+                repo.name,
+                worktree_path
+            );
+
+            // Debug: print git status
+            if let Ok(output) = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .arg("status")
+                .arg("--short")
+                .output()
+            {
+                let status = String::from_utf8_lossy(&output.stdout);
+                tracing::info!(
+                    "check_repos_for_changes: git status for '{}': {}",
+                    repo.name,
+                    if status.trim().is_empty() {
+                        "(clean)".to_string()
+                    } else {
+                        status.to_string()
+                    }
+                );
+
+                // Check if status is empty (no changes at all)
+                if !status.trim().is_empty() {
+                    tracing::info!(
+                        "check_repos_for_changes: found changes in repo '{}' (from git status)",
+                        repo.name
+                    );
+                    repos_with_changes.push((repo.clone(), worktree_path.clone()));
+                    continue;
+                }
+            }
+
+            // Debug: print git log
+            if let Ok(output) = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .arg("log")
+                .arg("--oneline")
+                .arg("-5")
+                .output()
+            {
+                let log = String::from_utf8_lossy(&output.stdout);
+                tracing::info!(
+                    "check_repos_for_changes: recent commits for '{}': {}",
+                    repo.name,
+                    log
+                );
+            }
+
+            // Double-check with is_worktree_clean (tracked files only)
+            // This is a fallback for cases where git status parsing might fail
             match git.is_worktree_clean(&worktree_path) {
                 Ok(false) => {
-                    // false = dirty = has changes
+                    tracing::info!(
+                        "check_repos_for_changes: found tracked changes in repo '{}'",
+                        repo.name
+                    );
                     repos_with_changes.push((repo.clone(), worktree_path));
                 }
                 Ok(true) => {
-                    tracing::debug!("No changes in repo '{}'", repo.name);
+                    tracing::debug!(
+                        "check_repos_for_changes: no tracked changes in repo '{}'",
+                        repo.name
+                    );
                 }
                 Err(e) => {
+                    tracing::error!(
+                        "check_repos_for_changes: error checking repo '{}': {}",
+                        repo.name,
+                        e
+                    );
                     return Err(ContainerError::Other(anyhow!(
                         "Pre-flight check failed for repo '{}': {}",
                         repo.name,
@@ -488,6 +564,11 @@ impl LocalContainerService {
                 }
             }
         }
+
+        tracing::info!(
+            "check_repos_for_changes: found {} repos with changes",
+            repos_with_changes.len()
+        );
 
         Ok(repos_with_changes)
     }
@@ -1513,6 +1594,11 @@ impl ContainerService for LocalContainerService {
         }
 
         let message = self.get_commit_message(ctx).await;
+        tracing::info!(
+            "try_commit_changes: got message - length: {}, content: '{}'",
+            message.len(),
+            message
+        );
 
         let container_ref = ctx
             .workspace
@@ -1523,11 +1609,19 @@ impl ContainerService for LocalContainerService {
 
         let repos_with_changes = self.check_repos_for_changes(&workspace_root, &ctx.repos)?;
         if repos_with_changes.is_empty() {
-            tracing::debug!("No changes to commit in any repository");
+            tracing::info!(
+                "try_commit_changes: no changes to commit in any repository (message was: '{}')",
+                message
+            );
             return Ok(false);
         }
 
-        Ok(self.commit_repos(repos_with_changes, &message))
+        let committed = self.commit_repos(repos_with_changes, &message);
+        tracing::info!(
+            "try_commit_changes: commit_repos returned: {}",
+            committed
+        );
+        Ok(committed)
     }
 
     /// Copy files from the original project directory to the worktree.

@@ -441,6 +441,30 @@ pub struct LastCommitMessageResponse {
     pub message: String,
 }
 
+#[derive(Debug, Deserialize, TS)]
+pub struct CommitWorktreeRequest {
+    pub repo_id: Uuid,
+}
+
+#[derive(Debug, Serialize, TS)]
+pub struct CommitWorktreeResponse {
+    pub success: bool,
+    pub message: String,
+    pub commit_hash: Option<String>,
+}
+
+#[derive(Debug, Deserialize, TS)]
+pub struct UndoCommitRequest {
+    pub repo_id: Uuid,
+}
+
+#[derive(Debug, Serialize, TS)]
+pub struct UndoCommitResponse {
+    pub success: bool,
+    pub message: String,
+    pub reverted_commit: Option<String>,
+}
+
 const MAX_DIFF_CONTEXT_CHARS: usize = 12000;
 
 #[derive(Debug, Deserialize, TS)]
@@ -749,6 +773,159 @@ pub async fn get_last_commit_message(
 
     Ok(ResponseJson(ApiResponse::success(
         LastCommitMessageResponse { message },
+    )))
+}
+
+/// Commit all changes in the worktree with an auto-generated commit message
+#[axum::debug_handler]
+pub async fn commit_worktree_handler(
+    Extension(workspace): Extension<Workspace>,
+    State(deployment): State<DeploymentImpl>,
+    Json(request): Json<CommitWorktreeRequest>,
+) -> Result<ResponseJson<ApiResponse<CommitWorktreeResponse>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    let workspace_repo =
+        WorkspaceRepo::find_by_workspace_and_repo_id(pool, workspace.id, request.repo_id)
+            .await?
+            .ok_or(RepoError::NotFound)?;
+
+    let repo = Repo::find_by_id(pool, workspace_repo.repo_id)
+        .await?
+        .ok_or(RepoError::NotFound)?;
+
+    let task = Task::find_by_id(pool, workspace.task_id)
+        .await?
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!("Task not found: {}", workspace.task_id))
+        })?;
+
+    let container_ref = deployment
+        .container()
+        .ensure_container_exists(&workspace)
+        .await?;
+    let workspace_path = Path::new(&container_ref);
+    let worktree_path = workspace_path.join(&repo.name);
+
+    // Get the base commit for diff
+    let base_commit = deployment.git().get_base_commit(
+        &repo.path,
+        &workspace.branch,
+        &workspace_repo.target_branch,
+    )?;
+
+    // Get diffs for commit message generation
+    let diffs = deployment.git().get_diffs(
+        git::DiffTarget::Worktree {
+            worktree_path: &worktree_path,
+            base_commit: &base_commit,
+        },
+        None,
+    )?;
+
+    // Check if there are any diffs
+    if diffs.is_empty() {
+        return Ok(ResponseJson(ApiResponse::success(
+            CommitWorktreeResponse {
+                success: false,
+                message: "No changes to commit".to_string(),
+                commit_hash: None,
+            },
+        )));
+    }
+
+    // Generate commit message using DeepSeek
+    let diff_summary = summarize_diffs(&diffs);
+    let diff_context = build_diff_context(&diffs);
+    let prompt = build_branch_commit_prompt(
+        &task.title,
+        task.description.as_deref(),
+        &workspace_repo.target_branch,
+        &diff_summary,
+        &diff_context,
+    );
+
+    let commit_message = generate_commit_message(&prompt)
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Failed to generate commit message: {}", e)))?;
+
+    // Commit the changes
+    deployment
+        .git()
+        .commit(&worktree_path, &commit_message)
+        .map_err(|e| ApiError::BadRequest(format!("Failed to commit: {}", e)))?;
+
+    // Get the new HEAD commit hash
+    let head_info = deployment.git().get_head_info(&worktree_path)?;
+
+    tracing::info!(
+        "Successfully committed changes to worktree {} with message: {}",
+        worktree_path.display(),
+        commit_message
+    );
+
+    Ok(ResponseJson(ApiResponse::success(
+        CommitWorktreeResponse {
+            success: true,
+            message: commit_message,
+            commit_hash: Some(head_info.oid),
+        },
+    )))
+}
+
+/// Undo the latest commit in the worktree (using git reset --soft HEAD~1)
+#[axum::debug_handler]
+pub async fn undo_commit_handler(
+    Extension(workspace): Extension<Workspace>,
+    State(deployment): State<DeploymentImpl>,
+    Json(request): Json<UndoCommitRequest>,
+) -> Result<ResponseJson<ApiResponse<UndoCommitResponse>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    let workspace_repo =
+        WorkspaceRepo::find_by_workspace_and_repo_id(pool, workspace.id, request.repo_id)
+            .await?
+            .ok_or(RepoError::NotFound)?;
+
+    let repo = Repo::find_by_id(pool, workspace_repo.repo_id)
+        .await?
+        .ok_or(RepoError::NotFound)?;
+
+    let container_ref = deployment
+        .container()
+        .ensure_container_exists(&workspace)
+        .await?;
+    let workspace_path = Path::new(&container_ref);
+    let worktree_path = workspace_path.join(&repo.name);
+
+    // Get current HEAD commit hash before reset
+    let head_info_before = deployment.git().get_head_info(&worktree_path)?;
+    let reverted_commit = head_info_before.oid;
+
+    // Use git reset --soft HEAD~1 to undo the latest commit
+    // This keeps the changes staged for editing
+    let git_cli = git::GitCli::new();
+    git_cli
+        .git(&worktree_path, ["reset", "--soft", "HEAD~1"])
+        .map_err(|e| {
+            ApiError::BadRequest(format!(
+                "Failed to undo commit: {}. Make sure there is at least one commit to undo.",
+                e
+            ))
+        })?;
+
+    tracing::info!(
+        "Successfully undid latest commit {} in worktree {}",
+        reverted_commit,
+        worktree_path.display()
+    );
+
+    Ok(ResponseJson(ApiResponse::success(
+        UndoCommitResponse {
+            success: true,
+            message: format!("Undid commit: {}", reverted_commit),
+            reverted_commit: Some(reverted_commit),
+        },
     )))
 }
 
@@ -2174,6 +2351,8 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         .route("/merge/commit-message", post(generate_merge_commit_message))
         .route("/incremental-diff", get(get_incremental_diff))
         .route("/last-commit-message", get(get_last_commit_message))
+        .route("/commit-worktree", post(commit_worktree_handler))
+        .route("/undo-commit", post(undo_commit_handler))
         .route("/push", post(push_task_attempt_branch))
         .route("/push/force", post(force_push_task_attempt_branch))
         .route("/rebase", post(rebase_task_attempt))

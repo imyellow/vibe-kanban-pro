@@ -8,6 +8,8 @@ import {
   CheckCircle,
   ExternalLink,
   Undo2,
+  Save,
+  RotateCcw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button.tsx';
 import {
@@ -72,6 +74,8 @@ function GitOperations({
   const [pushing, setPushing] = useState(false);
   const [rebasing, setRebasing] = useState(false);
   const [reverting, setReverting] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [undoing, setUndoing] = useState(false);
   const [mergeSuccess, setMergeSuccess] = useState(false);
   const [pushSuccess, setPushSuccess] = useState(false);
 
@@ -145,13 +149,18 @@ function GitOperations({
         (m.type === 'pr' && m.pr_info.status === 'merged')
     );
 
+    // Find the latest direct merge for the revert button
+    const latestDirectMerge = selectedRepoStatus.merges.find(
+      (m: Merge) => m.type === 'direct'
+    );
+
     return {
       hasOpenPR: !!openPR,
       openPR,
       hasMergedPR: !!mergedPR,
       mergedPR,
       hasMerged: merges.length > 0,
-      latestMerge: selectedRepoStatus.merges[0] || null, // Most recent merge
+      latestMerge: latestDirectMerge || null,
     };
   }, [getSelectedRepoStatus]);
 
@@ -320,6 +329,65 @@ function GitOperations({
       repoId: getSelectedRepoId(),
       targetBranch: getSelectedRepoStatus()?.target_branch_name,
     });
+  };
+
+  const handleCommitClick = async () => {
+    const repoId = getSelectedRepoId();
+    if (!repoId) return;
+
+    try {
+      setCommitting(true);
+      const response = await attemptsApi.commitWorktree(
+        selectedAttempt.id,
+        repoId
+      );
+
+      if (response.success) {
+        // Commit succeeded, reload to refresh branch status
+        setTimeout(() => {
+          window.location.reload();
+        }, 500);
+      } else {
+        alert(response.message || 'No changes to commit');
+      }
+    } catch (error) {
+      console.error('Failed to commit:', error);
+      alert(t('git.commit.failed', 'Failed to commit'));
+    } finally {
+      setCommitting(false);
+    }
+  };
+
+  const handleUndoCommitClick = async () => {
+    const repoId = getSelectedRepoId();
+    if (!repoId) return;
+
+    // Confirm before undoing
+    if (!window.confirm(t('git.undo.confirm', 'Are you sure you want to undo the latest commit?'))) {
+      return;
+    }
+
+    try {
+      setUndoing(true);
+      const response = await attemptsApi.undoCommit(
+        selectedAttempt.id,
+        repoId
+      );
+
+      if (response.success) {
+        // Undo succeeded, reload to refresh branch status
+        setTimeout(() => {
+          window.location.reload();
+        }, 500);
+      } else {
+        alert(response.message || 'Failed to undo commit');
+      }
+    } catch (error) {
+      console.error('Failed to undo commit:', error);
+      alert(t('git.undo.failed', 'Failed to undo commit'));
+    } finally {
+      setUndoing(false);
+    }
   };
 
   const isVertical = layout === 'vertical';
@@ -534,6 +602,49 @@ function GitOperations({
           </div>
         ) : selectedRepoStatus ? (
           <div className={actionsClasses}>
+            {/* 提交按钮 */}
+            <Button
+              onClick={handleCommitClick}
+              disabled={
+                committing ||
+                isAttemptRunning ||
+                hasConflictsCalculated ||
+                !selectedRepoStatus ||
+                !diffs ||
+                diffs.length === 0
+              }
+              variant="outline"
+              size="xs"
+              className="border-emerald-500 text-emerald-400 dark:text-emerald-300 hover:bg-emerald-500/10 gap-1 shrink-0"
+              aria-label={t('git.commit.button', '提交')}
+            >
+              <Save className="h-3.5 w-3.5" />
+              <span className="truncate max-w-[10ch]">
+                {committing ? t('git.commit.committing', '提交中...') : t('git.commit.button', '提交')}
+              </span>
+            </Button>
+
+            {/* 撤销提交按钮 */}
+            <Button
+              onClick={handleUndoCommitClick}
+              disabled={
+                undoing ||
+                isAttemptRunning ||
+                hasConflictsCalculated ||
+                !selectedRepoStatus?.commits_ahead ||
+                selectedRepoStatus.commits_ahead === 0
+              }
+              variant="outline"
+              size="xs"
+              className="border-amber-600 text-amber-600 hover:bg-amber-600 gap-1 shrink-0"
+              aria-label={t('git.undo.button', '撤销提交')}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span className="truncate max-w-[10ch]">
+                {undoing ? t('git.undo.undoing', '撤销中...') : t('git.undo.button', '撤销提交')}
+              </span>
+            </Button>
+
             <Button
               onClick={handleMergeClick}
               disabled={
