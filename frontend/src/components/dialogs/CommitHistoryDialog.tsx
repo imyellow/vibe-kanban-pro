@@ -39,7 +39,8 @@ const CommitHistoryDialog = NiceModal.create<CommitHistoryDialogProps>(
       <Dialog
         open={modal.visible}
         onOpenChange={(open) => !open && modal.hide()}
-        className="max-w-6xl w-full h-[80vh] p-0"
+        className="max-w-[95vw] w-[95vw] h-[95vh] p-0"
+        uncloseable
       >
         <DialogContent className="flex flex-col h-full p-0">
           <DialogHeader className="px-6 py-4 border-b flex-shrink-0">

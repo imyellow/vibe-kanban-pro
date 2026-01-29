@@ -1247,21 +1247,27 @@ impl GitService {
         let worktree_commit_oid = worktree_ref.peel_to_commit()?.id();
         tracing::info!("Worktree HEAD commit: {}", worktree_commit_oid);
 
-        // Get HEAD of base branch to check which commits are merged
+        // Get HEAD of base branch
         let base_branch_ref = Self::find_branch(&repo, base_branch)?;
         let base_commit_oid = base_branch_ref.get().peel_to_commit()?.id();
         tracing::info!("Base branch HEAD commit: {}", base_commit_oid);
 
-        // Collect all commits that are in base branch
-        let mut base_commits = std::collections::HashSet::new();
+        // Get merge base (common ancestor)
+        let merge_base_oid = repo.merge_base(worktree_commit_oid, base_commit_oid)?;
+        tracing::info!("Merge base: {}", merge_base_oid);
+
+        // Collect commits that are in base branch but not before merge base
+        // These are commits that were added to base branch after the fork point
+        let mut base_unique_commits = std::collections::HashSet::new();
         let mut base_revwalk = repo.revwalk()?;
         base_revwalk.push(base_commit_oid)?;
+        base_revwalk.hide(merge_base_oid)?;
         for oid in base_revwalk {
             if let Ok(oid) = oid {
-                base_commits.insert(oid);
+                base_unique_commits.insert(oid);
             }
         }
-        tracing::info!("Base branch has {} commits", base_commits.len());
+        tracing::info!("Base branch has {} unique commits since fork", base_unique_commits.len());
 
         // Collect all commits from worktree HEAD
         let mut revwalk = repo.revwalk()?;
@@ -1273,8 +1279,9 @@ impl GitService {
             let oid = oid?;
             let commit = repo.find_commit(oid)?;
 
-            // Check if this commit is in the base branch
-            let is_merged = base_commits.contains(&oid);
+            // A commit is merged if it exists in the base branch's unique commits
+            // This means it was part of a merge from this worktree to base
+            let is_merged = base_unique_commits.contains(&oid);
 
             commits.push(CommitInfo {
                 hash: oid.to_string(),
@@ -1288,7 +1295,7 @@ impl GitService {
             });
         }
 
-        tracing::info!("Found {} commits", commits.len());
+        tracing::info!("Found {} total commits", commits.len());
         Ok(commits)
     }
 
