@@ -830,11 +830,16 @@ pub async fn get_incremental_diff(
         (commit, DiffBaseType::MergeBase, None)
     };
 
-    // Get worktree diffs from base commit
+    // Get current HEAD commit SHA in the worktree
+    let head_info = deployment.git().get_head_info(&worktree_path)?;
+
+    // Get diffs between base commit and current HEAD using CommitRange
+    let base_commit_sha = base_commit.as_oid().to_string();
     let diffs = deployment.git().get_diffs(
-        DiffTarget::Worktree {
-            worktree_path: &worktree_path,
-            base_commit: &base_commit,
+        DiffTarget::CommitRange {
+            repo_path: &repo.path,
+            base_commit_sha: &base_commit_sha,
+            head_commit_sha: &head_info.oid,
         },
         None,
     )?;

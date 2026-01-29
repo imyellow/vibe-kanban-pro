@@ -146,6 +146,12 @@ pub enum DiffTarget<'p> {
         repo_path: &'p Path,
         commit_sha: &'p str,
     },
+    /// Diff between two specific commits
+    CommitRange {
+        repo_path: &'p Path,
+        base_commit_sha: &'p str,
+        head_commit_sha: &'p str,
+    },
 }
 
 impl Default for GitService {
@@ -418,6 +424,55 @@ impl GitService {
                 let mut diff = repo.diff_tree_to_tree(
                     Some(&parent_tree),
                     Some(&commit_tree),
+                    Some(&mut diff_opts),
+                )?;
+
+                // Enable rename detection
+                let mut find_opts = git2::DiffFindOptions::new();
+                diff.find_similar(Some(&mut find_opts))?;
+
+                self.convert_diff_to_file_diffs(diff, &repo)
+            }
+            DiffTarget::CommitRange {
+                repo_path,
+                base_commit_sha,
+                head_commit_sha,
+            } => {
+                let repo = self.open_repo(repo_path)?;
+
+                // Resolve base and head commits
+                let base_oid = git2::Oid::from_str(base_commit_sha).map_err(|_| {
+                    GitServiceError::InvalidRepository(format!(
+                        "Invalid base commit SHA: {base_commit_sha}"
+                    ))
+                })?;
+                let head_oid = git2::Oid::from_str(head_commit_sha).map_err(|_| {
+                    GitServiceError::InvalidRepository(format!(
+                        "Invalid head commit SHA: {head_commit_sha}"
+                    ))
+                })?;
+
+                let base_commit = repo.find_commit(base_oid)?;
+                let head_commit = repo.find_commit(head_oid)?;
+
+                let base_tree = base_commit.tree()?;
+                let head_tree = head_commit.tree()?;
+
+                // Diff options
+                let mut diff_opts = git2::DiffOptions::new();
+                diff_opts.include_typechange(true);
+
+                // Optional path filtering
+                if let Some(paths) = path_filter {
+                    for path in paths {
+                        diff_opts.pathspec(*path);
+                    }
+                }
+
+                // Compute the diff base -> head
+                let mut diff = repo.diff_tree_to_tree(
+                    Some(&base_tree),
+                    Some(&head_tree),
                     Some(&mut diff_opts),
                 )?;
 
