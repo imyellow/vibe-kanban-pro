@@ -98,6 +98,17 @@ impl std::fmt::Display for Commit {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct CommitInfo {
+    pub hash: String,
+    pub short_hash: String,
+    pub message: String,
+    pub author_name: String,
+    pub author_email: String,
+    #[ts(type = "Date")]
+    pub timestamp: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct WorktreeResetOptions {
     pub perform_reset: bool,
@@ -1211,6 +1222,63 @@ impl GitService {
             .unwrap_or("(no message)")
             .trim_end()
             .to_string())
+    }
+
+    /// Get commits that are unique to the worktree branch (not in base branch)
+    /// Returns commits in reverse chronological order (newest first)
+    pub fn get_worktree_commits(
+        &self,
+        repo_path: &Path,
+        worktree_branch: &str,
+        base_branch: &str,
+    ) -> Result<Vec<CommitInfo>, GitServiceError> {
+        let repo = Repository::open(repo_path)?;
+
+        // Get the merge base between worktree branch and base branch
+        let base_commit = self.get_base_commit(repo_path, worktree_branch, base_branch)?;
+
+        // Get HEAD of worktree branch
+        let worktree_ref = repo.find_reference(&format!("refs/heads/{}", worktree_branch))?;
+        let worktree_commit_oid = worktree_ref.peel_to_commit()?.id();
+
+        // Collect commits from HEAD back to (but not including) base commit
+        let mut revwalk = repo.revwalk()?;
+        revwalk.push(worktree_commit_oid)?;
+        revwalk.hide(base_commit.as_oid())?;
+        revwalk.set_sorting(Sort::TIME)?;
+
+        let mut commits = Vec::new();
+        for oid in revwalk {
+            let oid = oid?;
+            let commit = repo.find_commit(oid)?;
+
+            commits.push(CommitInfo {
+                hash: oid.to_string(),
+                short_hash: format!("{:.7}", oid),
+                message: commit.message().unwrap_or("").to_string(),
+                author_name: commit.author().name().unwrap_or("").to_string(),
+                author_email: commit.author().email().unwrap_or("").to_string(),
+                timestamp: DateTime::from_timestamp(commit.time().seconds(), 0)
+                    .unwrap_or_else(|| Utc::now()),
+            });
+        }
+
+        Ok(commits)
+    }
+
+    /// Get the diff for a specific commit (compared to its parent)
+    pub fn get_commit_diff(
+        &self,
+        repo_path: &Path,
+        commit_hash: &str,
+    ) -> Result<Vec<Diff>, GitServiceError> {
+        self.get_diffs(
+            DiffTarget::Commit {
+                repo_path,
+                commit_sha: commit_hash,
+            },
+            None,
+        )
     }
 
     /// Compare two OIDs and return (ahead, behind) counts: how many commits

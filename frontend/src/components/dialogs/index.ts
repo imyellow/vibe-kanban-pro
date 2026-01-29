@@ -88,6 +88,10 @@ export {
   StartReviewDialog,
   type StartReviewDialogProps,
 } from './tasks/StartReviewDialog';
+export {
+  default as CommitHistoryDialog,
+  type CommitHistoryDialogProps,
+} from './CommitHistoryDialog';
 
 // Auth dialogs
 export { GhCliSetupDialog } from './auth/GhCliSetupDialog';

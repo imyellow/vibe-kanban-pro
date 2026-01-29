@@ -1912,6 +1912,76 @@ pub async fn get_task_attempt_repos(
     Ok(ResponseJson(ApiResponse::success(repos)))
 }
 
+pub async fn get_worktree_commits_handler(
+    Extension(workspace): Extension<Workspace>,
+    State(deployment): State<DeploymentImpl>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<ResponseJson<ApiResponse<Vec<services::services::git::CommitInfo>>>, ApiError> {
+    let repo_id = params
+        .get("repo_id")
+        .ok_or_else(|| ApiError::BadRequest("Missing repo_id parameter".to_string()))?
+        .parse::<uuid::Uuid>()
+        .map_err(|_| ApiError::BadRequest("Invalid repo_id".to_string()))?;
+
+    let pool = &deployment.db().pool;
+
+    let repo = Repo::find_by_id(pool, repo_id)
+        .await?
+        .ok_or(RepoError::NotFound)?;
+
+    let workspace_repo = WorkspaceRepo::find_by_workspace_and_repo_id(pool, workspace.id, repo_id)
+        .await?
+        .ok_or(RepoError::NotFound)?;
+
+    let container_ref = deployment
+        .container()
+        .ensure_container_exists(&workspace)
+        .await?;
+    let workspace_path = Path::new(&container_ref);
+    let repo_path = workspace_path.join(&repo.name);
+
+    let commits = deployment.git().get_worktree_commits(
+        &repo_path,
+        &workspace.branch,
+        &workspace_repo.target_branch,
+    )?;
+
+    Ok(ResponseJson(ApiResponse::success(commits)))
+}
+
+pub async fn get_commit_diff_handler(
+    Extension(workspace): Extension<Workspace>,
+    State(deployment): State<DeploymentImpl>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<ResponseJson<ApiResponse<Vec<utils::diff::Diff>>>, ApiError> {
+    let repo_id = params
+        .get("repo_id")
+        .ok_or_else(|| ApiError::BadRequest("Missing repo_id parameter".to_string()))?
+        .parse::<uuid::Uuid>()
+        .map_err(|_| ApiError::BadRequest("Invalid repo_id".to_string()))?;
+
+    let commit_hash = params
+        .get("commit_hash")
+        .ok_or_else(|| ApiError::BadRequest("Missing commit_hash parameter".to_string()))?;
+
+    let pool = &deployment.db().pool;
+
+    let repo = Repo::find_by_id(pool, repo_id)
+        .await?
+        .ok_or(RepoError::NotFound)?;
+
+    let container_ref = deployment
+        .container()
+        .ensure_container_exists(&workspace)
+        .await?;
+    let workspace_path = Path::new(&container_ref);
+    let repo_path = workspace_path.join(&repo.name);
+
+    let diffs = deployment.git().get_commit_diff(&repo_path, commit_hash)?;
+
+    Ok(ResponseJson(ApiResponse::success(diffs)))
+}
+
 pub async fn search_workspace_files(
     Extension(workspace): Extension<Workspace>,
     State(deployment): State<DeploymentImpl>,
@@ -2109,6 +2179,8 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         .route("/change-target-branch", post(change_target_branch))
         .route("/rename-branch", post(rename_branch))
         .route("/repos", get(get_task_attempt_repos))
+        .route("/worktree-commits", get(get_worktree_commits_handler))
+        .route("/commit-diff", get(get_commit_diff_handler))
         .route("/search", get(search_workspace_files))
         .route("/first-message", get(get_first_user_message))
         .route("/mark-seen", put(mark_seen))

@@ -288,6 +288,8 @@ export type OpenPrInfo = { number: bigint, url: string, title: string, head_bran
 
 export type GitRemote = { name: string, url: string, };
 
+export type CommitInfo = { hash: string, short_hash: string, message: string, author_name: string, author_email: string, timestamp: Date, };
+
 export type ListPrsError = { "type": "cli_not_installed", provider: ProviderKind, } | { "type": "auth_failed", message: string, } | { "type": "unsupported_provider" };
 
 export type CreateWorkspaceFromPrBody = { repo_id: string, pr_number: bigint, pr_title: string, pr_url: string, head_branch: string, base_branch: string, run_setup: boolean, remote_name: string | null, };

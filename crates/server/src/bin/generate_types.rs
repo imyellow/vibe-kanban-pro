@@ -140,6 +140,7 @@ fn generate_types_content() -> String {
         services::services::git_host::ProviderKind::decl(),
         services::services::git_host::OpenPrInfo::decl(),
         services::services::git::GitRemote::decl(),
+        services::services::git::CommitInfo::decl(),
         server::routes::repo::ListPrsError::decl(),
         server::routes::task_attempts::pr::CreateWorkspaceFromPrBody::decl(),
         server::routes::task_attempts::pr::CreateWorkspaceFromPrResponse::decl(),

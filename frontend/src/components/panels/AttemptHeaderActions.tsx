@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Eye, FileDiff, X } from 'lucide-react';
+import { Eye, FileDiff, X, History } from 'lucide-react';
 import { Button } from '../ui/button';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group';
 import {
@@ -13,6 +13,9 @@ import type { TaskWithAttemptStatus } from 'shared/types';
 import { ActionsDropdown } from '../ui/actions-dropdown';
 import { usePostHog } from 'posthog-js/react';
 import { WorkspaceWithSession } from '@/types/attempt';
+import { CommitHistoryDialog } from '../dialogs';
+import { useQuery } from '@tanstack/react-query';
+import { attemptsApi } from '@/lib/api';
 
 interface AttemptHeaderActionsProps {
   onClose: () => void;
@@ -31,6 +34,23 @@ export const AttemptHeaderActions = ({
 }: AttemptHeaderActionsProps) => {
   const { t } = useTranslation('tasks');
   const posthog = usePostHog();
+
+  // Fetch repos for the workspace
+  const { data: repos } = useQuery({
+    queryKey: ['attempt-repos', attempt?.id],
+    queryFn: () => attemptsApi.getRepos(attempt!.id),
+    enabled: !!attempt?.id,
+  });
+
+  const handleOpenCommitHistory = () => {
+    const firstRepo = repos?.[0];
+    if (attempt?.id && firstRepo?.id) {
+      CommitHistoryDialog.show({
+        attemptId: attempt.id,
+        repoId: firstRepo.id,
+      });
+    }
+  };
 
   return (
     <>
@@ -70,6 +90,24 @@ export const AttemptHeaderActions = ({
             className="inline-flex gap-4"
             aria-label="Layout mode"
           >
+            {attempt?.id && repos && repos.length > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="icon"
+                    size="sm"
+                    onClick={handleOpenCommitHistory}
+                    aria-label="Commit History"
+                  >
+                    <History className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  提交历史
+                </TooltipContent>
+              </Tooltip>
+            )}
+
             <Tooltip>
               <TooltipTrigger asChild>
                 <ToggleGroupItem
