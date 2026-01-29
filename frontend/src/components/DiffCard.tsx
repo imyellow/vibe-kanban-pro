@@ -122,7 +122,8 @@ export default function DiffCard({
         newLang,
         diffOptions
       );
-      file.initRaw();
+      // Don't call initRaw() - this allows the library to show only changed hunks
+      // with context lines instead of the entire file
       return file;
     } catch (e) {
       console.error('Failed to build diff for view', e);
