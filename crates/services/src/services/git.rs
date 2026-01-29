@@ -1227,6 +1227,7 @@ impl GitService {
 
     /// Get commits from the worktree branch
     /// Returns commits in reverse chronological order (newest first)
+    /// Only returns commits that are unique to the worktree branch (not in base branch)
     pub fn get_worktree_commits(
         &self,
         repo_path: &Path,
@@ -1252,6 +1253,10 @@ impl GitService {
         let base_commit_oid = base_branch_ref.get().peel_to_commit()?.id();
         tracing::info!("Base branch HEAD commit: {}", base_commit_oid);
 
+        // Find merge base
+        let merge_base_oid = repo.merge_base(worktree_commit_oid, base_commit_oid)?;
+        tracing::info!("Merge base: {}", merge_base_oid);
+
         // Collect all commits reachable from base branch HEAD
         // A commit is "merged" if it's reachable from the base branch
         let mut base_commits = std::collections::HashSet::new();
@@ -1264,9 +1269,11 @@ impl GitService {
         }
         tracing::info!("Base branch has {} total commits", base_commits.len());
 
-        // Collect all commits from worktree HEAD for display
+        // Collect only commits that are in worktree but not in base branch
+        // This shows commits unique to this worktree/task
         let mut revwalk = repo.revwalk()?;
         revwalk.push(worktree_commit_oid)?;
+        revwalk.hide(merge_base_oid)?; // Hide commits before the merge base
         revwalk.set_sorting(Sort::TIME)?;
 
         let mut commits = Vec::new();
@@ -1289,7 +1296,7 @@ impl GitService {
             });
         }
 
-        tracing::info!("Found {} total commits", commits.len());
+        tracing::info!("Found {} worktree-specific commits", commits.len());
         Ok(commits)
     }
 
