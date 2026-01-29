@@ -246,7 +246,12 @@ function GitOperations({
         commitMessage,
       });
       setMergeSuccess(true);
-      setTimeout(() => setMergeSuccess(false), 2000);
+
+      // Refresh branch status and diffs after successful merge
+      // 500ms延迟确保后端已完成merge操作
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
     } finally {
       setMerging(false);
     }
