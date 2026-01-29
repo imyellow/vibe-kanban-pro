@@ -1940,11 +1940,20 @@ pub async fn get_worktree_commits_handler(
     let workspace_path = Path::new(&container_ref);
     let repo_path = workspace_path.join(&repo.name);
 
+    tracing::info!(
+        "Getting worktree commits - repo_path: {:?}, worktree_branch: {}, base_branch: {}",
+        repo_path,
+        workspace.branch,
+        workspace_repo.target_branch
+    );
+
     let commits = deployment.git().get_worktree_commits(
         &repo_path,
         &workspace.branch,
         &workspace_repo.target_branch,
     )?;
+
+    tracing::info!("Found {} commits", commits.len());
 
     Ok(ResponseJson(ApiResponse::success(commits)))
 }

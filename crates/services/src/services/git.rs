@@ -107,6 +107,7 @@ pub struct CommitInfo {
     pub author_email: String,
     #[ts(type = "Date")]
     pub timestamp: DateTime<Utc>,
+    pub is_merged: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1224,7 +1225,7 @@ impl GitService {
             .to_string())
     }
 
-    /// Get commits that are unique to the worktree branch (not in base branch)
+    /// Get commits from the worktree branch
     /// Returns commits in reverse chronological order (newest first)
     pub fn get_worktree_commits(
         &self,
@@ -1232,25 +1233,48 @@ impl GitService {
         worktree_branch: &str,
         base_branch: &str,
     ) -> Result<Vec<CommitInfo>, GitServiceError> {
-        let repo = Repository::open(repo_path)?;
+        tracing::info!(
+            "get_worktree_commits called - repo_path: {:?}, worktree_branch: {}, base_branch: {}",
+            repo_path,
+            worktree_branch,
+            base_branch
+        );
 
-        // Get the merge base between worktree branch and base branch
-        let base_commit = self.get_base_commit(repo_path, worktree_branch, base_branch)?;
+        let repo = Repository::open(repo_path)?;
 
         // Get HEAD of worktree branch
         let worktree_ref = repo.find_reference(&format!("refs/heads/{}", worktree_branch))?;
         let worktree_commit_oid = worktree_ref.peel_to_commit()?.id();
+        tracing::info!("Worktree HEAD commit: {}", worktree_commit_oid);
 
-        // Collect commits from HEAD back to (but not including) base commit
+        // Get HEAD of base branch to check which commits are merged
+        let base_branch_ref = Self::find_branch(&repo, base_branch)?;
+        let base_commit_oid = base_branch_ref.get().peel_to_commit()?.id();
+        tracing::info!("Base branch HEAD commit: {}", base_commit_oid);
+
+        // Collect all commits that are in base branch
+        let mut base_commits = std::collections::HashSet::new();
+        let mut base_revwalk = repo.revwalk()?;
+        base_revwalk.push(base_commit_oid)?;
+        for oid in base_revwalk {
+            if let Ok(oid) = oid {
+                base_commits.insert(oid);
+            }
+        }
+        tracing::info!("Base branch has {} commits", base_commits.len());
+
+        // Collect all commits from worktree HEAD
         let mut revwalk = repo.revwalk()?;
         revwalk.push(worktree_commit_oid)?;
-        revwalk.hide(base_commit.as_oid())?;
         revwalk.set_sorting(Sort::TIME)?;
 
         let mut commits = Vec::new();
         for oid in revwalk {
             let oid = oid?;
             let commit = repo.find_commit(oid)?;
+
+            // Check if this commit is in the base branch
+            let is_merged = base_commits.contains(&oid);
 
             commits.push(CommitInfo {
                 hash: oid.to_string(),
@@ -1260,9 +1284,11 @@ impl GitService {
                 author_email: commit.author().email().unwrap_or("").to_string(),
                 timestamp: DateTime::from_timestamp(commit.time().seconds(), 0)
                     .unwrap_or_else(|| Utc::now()),
+                is_merged,
             });
         }
 
+        tracing::info!("Found {} commits", commits.len());
         Ok(commits)
     }
 

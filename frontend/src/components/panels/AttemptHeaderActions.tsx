@@ -44,10 +44,20 @@ export const AttemptHeaderActions = ({
 
   const handleOpenCommitHistory = () => {
     const firstRepo = repos?.[0];
+    console.log('[AttemptHeaderActions] Opening commit history:', {
+      attemptId: attempt?.id,
+      repoId: firstRepo?.id,
+      repos,
+    });
     if (attempt?.id && firstRepo?.id) {
       CommitHistoryDialog.show({
         attemptId: attempt.id,
         repoId: firstRepo.id,
+      });
+    } else {
+      console.warn('[AttemptHeaderActions] Missing attemptId or repoId:', {
+        attemptId: attempt?.id,
+        repoId: firstRepo?.id,
       });
     }
   };

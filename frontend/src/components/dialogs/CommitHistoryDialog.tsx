@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import NiceModal, { useModal } from '@ebay/nice-modal-react';
-import { History, X } from 'lucide-react';
+import { History, X, GitMerge } from 'lucide-react';
 import { defineModal } from '@/lib/modals';
 import {
   Dialog,
@@ -36,9 +36,13 @@ const CommitHistoryDialog = NiceModal.create<CommitHistoryDialogProps>(
     );
 
     return (
-      <Dialog open={modal.visible} onOpenChange={(open) => !open && modal.hide()}>
-        <DialogContent className="max-w-[90vw] w-[90vw] h-[80vh] flex flex-col p-0">
-          <DialogHeader className="px-6 py-4 border-b">
+      <Dialog
+        open={modal.visible}
+        onOpenChange={(open) => !open && modal.hide()}
+        className="max-w-6xl w-full h-[80vh] p-0"
+      >
+        <DialogContent className="flex flex-col h-full p-0">
+          <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <History className="h-5 w-5" />
@@ -55,7 +59,7 @@ const CommitHistoryDialog = NiceModal.create<CommitHistoryDialogProps>(
             </div>
           </DialogHeader>
 
-          <div className="flex-1 flex overflow-hidden">
+          <div className="flex-1 flex overflow-hidden min-h-0">
             {/* Left panel - Commit list */}
             <div className="w-1/3 border-r flex flex-col overflow-hidden">
               <div className="flex-1 overflow-y-auto">
@@ -79,8 +83,16 @@ const CommitHistoryDialog = NiceModal.create<CommitHistoryDialogProps>(
                       selectedCommit?.hash === commit.hash ? 'bg-accent' : ''
                     }`}
                   >
-                    <div className="font-mono text-sm text-muted-foreground mb-1">
-                      {commit.short_hash}
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="font-mono text-sm text-muted-foreground">
+                        {commit.short_hash}
+                      </div>
+                      {commit.is_merged && (
+                        <div className="flex items-center gap-1 px-2 py-0.5 bg-green-500/10 text-green-600 dark:text-green-400 rounded text-xs">
+                          <GitMerge className="h-3 w-3" />
+                          <span>已合并</span>
+                        </div>
+                      )}
                     </div>
                     <div className="text-sm font-medium mb-1 line-clamp-2">
                       {commit.message.split('\n')[0]}

@@ -288,7 +288,7 @@ export type OpenPrInfo = { number: bigint, url: string, title: string, head_bran
 
 export type GitRemote = { name: string, url: string, };
 
-export type CommitInfo = { hash: string, short_hash: string, message: string, author_name: string, author_email: string, timestamp: Date, };
+export type CommitInfo = { hash: string, short_hash: string, message: string, author_name: string, author_email: string, timestamp: Date, is_merged: boolean, };
 
 export type ListPrsError = { "type": "cli_not_installed", provider: ProviderKind, } | { "type": "auth_failed", message: string, } | { "type": "unsupported_provider" };
 
