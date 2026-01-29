@@ -465,6 +465,19 @@ pub struct UndoCommitResponse {
     pub reverted_commit: Option<String>,
 }
 
+#[derive(Debug, Serialize, TS)]
+pub struct CommitDetail {
+    pub hash: String,
+    pub message: String,
+    pub author_name: String,
+}
+
+#[derive(Debug, Serialize, TS)]
+pub struct CommitsAheadResponse {
+    pub commits: Vec<CommitDetail>,
+    pub total_count: usize,
+}
+
 const MAX_DIFF_CONTEXT_CHARS: usize = 12000;
 
 #[derive(Debug, Deserialize, TS)]
@@ -932,6 +945,108 @@ pub async fn undo_commit_handler(
 /// Get incremental diff for merge commit message generation.
 /// Uses the last merge commit as the base if available, otherwise falls back to merge base.
 #[axum::debug_handler]
+pub async fn get_commits_ahead_handler(
+    Extension(workspace): Extension<Workspace>,
+    State(deployment): State<DeploymentImpl>,
+    Query(query): Query<IncrementalDiffQuery>,
+) -> Result<ResponseJson<ApiResponse<CommitsAheadResponse>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    let workspace_repo =
+        WorkspaceRepo::find_by_workspace_and_repo_id(pool, workspace.id, query.repo_id)
+            .await?
+            .ok_or(RepoError::NotFound)?;
+
+    let repo = Repo::find_by_id(pool, workspace_repo.repo_id)
+        .await?
+        .ok_or(RepoError::NotFound)?;
+
+    let container_ref = deployment
+        .container()
+        .ensure_container_exists(&workspace)
+        .await?;
+    let workspace_path = Path::new(&container_ref);
+    let worktree_path = workspace_path.join(&repo.name);
+
+    // Get commits that are ahead of target branch
+    let git = deployment.git();
+    let repo_obj = git.open_repo(&worktree_path)?;
+
+    // Get the current branch HEAD
+    let head = repo_obj.head()?;
+    let head_oid = head.target().ok_or_else(|| {
+        ApiError::BadRequest("Cannot get HEAD commit".to_string())
+    })?;
+
+    // Get target branch reference
+    let target_ref = repo_obj
+        .find_branch(&workspace_repo.target_branch, git2::BranchType::Local)
+        .or_else(|_| {
+            repo_obj.find_branch(&workspace_repo.target_branch, git2::BranchType::Remote)
+        })
+        .map_err(|_| {
+            ApiError::BadRequest(format!(
+                "Cannot find target branch: {}",
+                workspace_repo.target_branch
+            ))
+        })?;
+
+    let target_oid = target_ref
+        .get()
+        .target()
+        .ok_or_else(|| ApiError::BadRequest("Cannot get target branch HEAD".to_string()))?;
+
+    // Get merge base
+    let merge_base_oid = repo_obj.merge_base(head_oid, target_oid).map_err(|e| {
+        ApiError::BadRequest(format!("Cannot get merge base: {}", e))
+    })?;
+
+    // Get all commits between merge base and current HEAD
+    let mut revwalk = repo_obj.revwalk().map_err(|e| {
+        ApiError::BadRequest(format!("Cannot revwalk: {}", e))
+    })?;
+
+    revwalk.push(head_oid).map_err(|e| {
+        ApiError::BadRequest(format!("Cannot push HEAD to revwalk: {}", e))
+    })?;
+
+    revwalk.hide(merge_base_oid).map_err(|e| {
+        ApiError::BadRequest(format!("Cannot hide merge base from revwalk: {}", e))
+    })?;
+
+    let mut commits = Vec::new();
+    for oid in revwalk {
+        let oid = oid.map_err(|e| {
+            ApiError::BadRequest(format!("Revwalk error: {}", e))
+        })?;
+
+        if let Ok(commit) = repo_obj.find_commit(oid) {
+            commits.push(CommitDetail {
+                hash: commit.id().to_string(),
+                message: commit
+                    .message()
+                    .unwrap_or("(no message)")
+                    .trim()
+                    .to_string(),
+                author_name: commit
+                    .author()
+                    .name()
+                    .unwrap_or("(unknown)")
+                    .to_string(),
+            });
+        }
+    }
+
+    let total_count = commits.len();
+
+    Ok(ResponseJson(ApiResponse::success(
+        CommitsAheadResponse { commits, total_count },
+    )))
+}
+
+/// Get incremental diff for merge commit message generation.
+/// Uses the last merge commit as the base if available, otherwise falls back to merge base.
+#[axum::debug_handler]
 pub async fn get_incremental_diff(
     Extension(workspace): Extension<Workspace>,
     State(deployment): State<DeploymentImpl>,
@@ -955,76 +1070,65 @@ pub async fn get_incremental_diff(
     let workspace_path = Path::new(&container_ref);
     let worktree_path = workspace_path.join(&repo.name);
 
-    // Try to find the last merge with a commit for this workspace and repo
-    let last_merge = Merge::find_latest_with_commit_by_workspace_and_repo(
-        pool,
-        workspace.id,
-        query.repo_id,
-    )
-    .await?;
+    let git = deployment.git();
+    let repo_obj = git.open_repo(&worktree_path)?;
 
-    // Determine the base commit for diff
-    let (base_commit, base_type, base_commit_str) = if let Some(ref merge) = last_merge {
-        if let Some(merge_commit) = merge.merge_commit() {
-            // Use the last merge commit as base
-            match git2::Oid::from_str(&merge_commit) {
-                Ok(oid) => (
-                    git::Commit::new(oid),
-                    DiffBaseType::LastMerge,
-                    Some(merge_commit),
-                ),
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to parse last merge commit '{}': {}. Falling back to merge base.",
-                        merge_commit,
-                        e
-                    );
-                    // Fall back to merge base
-                    let commit = deployment.git().get_base_commit(
-                        &repo.path,
-                        &workspace.branch,
-                        &workspace_repo.target_branch,
-                    )?;
-                    (commit, DiffBaseType::MergeBase, None)
-                }
-            }
-        } else {
-            // No merge commit available, use merge base
-            let commit = deployment.git().get_base_commit(
-                &repo.path,
-                &workspace.branch,
-                &workspace_repo.target_branch,
-            )?;
-            (commit, DiffBaseType::MergeBase, None)
-        }
-    } else {
-        // No previous merge, use merge base
-        let commit = deployment.git().get_base_commit(
-            &repo.path,
-            &workspace.branch,
-            &workspace_repo.target_branch,
-        )?;
-        (commit, DiffBaseType::MergeBase, None)
-    };
+    // Get current branch HEAD
+    let head = repo_obj.head().map_err(|e| {
+        ApiError::BadRequest(format!("Cannot get HEAD: {}", e))
+    })?;
+    let head_oid = head.target().ok_or_else(|| {
+        ApiError::BadRequest("Cannot get HEAD commit".to_string())
+    })?;
 
-    // Get current HEAD commit SHA in the worktree
-    let head_info = deployment.git().get_head_info(&worktree_path)?;
+    // Get target branch reference
+    let target_ref = repo_obj
+        .find_branch(&workspace_repo.target_branch, git2::BranchType::Local)
+        .or_else(|_| {
+            repo_obj.find_branch(&workspace_repo.target_branch, git2::BranchType::Remote)
+        })
+        .map_err(|e| {
+            ApiError::BadRequest(format!(
+                "Cannot find target branch '{}': {}",
+                workspace_repo.target_branch, e
+            ))
+        })?;
 
-    // Get diffs between base commit and current HEAD using CommitRange
-    let base_commit_sha = base_commit.as_oid().to_string();
+    let target_oid = target_ref.get().target().ok_or_else(|| {
+        ApiError::BadRequest("Cannot get target branch HEAD".to_string())
+    })?;
+
+    // Calculate merge base between current HEAD and target branch HEAD
+    // This ensures we only get diffs for commits unique to current branch
+    let merge_base_oid = repo_obj.merge_base(head_oid, target_oid).map_err(|e| {
+        ApiError::BadRequest(format!("Cannot calculate merge base: {}", e))
+    })?;
+
+    // Get diffs from merge base to current HEAD
+    // This includes only the changes that are unique to the current branch (excludes rebased content)
+    let base_commit_sha = merge_base_oid.to_string();
+    let head_commit_sha = head_oid.to_string();
+
+    tracing::info!(
+        "get_incremental_diff: base={}, head={}, target_branch={}. Computing diffs unique to current branch.",
+        base_commit_sha,
+        head_commit_sha,
+        workspace_repo.target_branch
+    );
+
     let diffs = deployment.git().get_diffs(
         DiffTarget::CommitRange {
             repo_path: &repo.path,
             base_commit_sha: &base_commit_sha,
-            head_commit_sha: &head_info.oid,
+            head_commit_sha: &head_commit_sha,
         },
         None,
     )?;
 
     Ok(ResponseJson(ApiResponse::success(IncrementalDiffResponse {
         diffs,
-        base_commit: base_commit_str,
-        base_type,
+        base_commit: Some(base_commit_sha),
+        base_type: DiffBaseType::MergeBase,
     })))
 }
 
@@ -2353,6 +2457,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         .route("/last-commit-message", get(get_last_commit_message))
         .route("/commit-worktree", post(commit_worktree_handler))
         .route("/undo-commit", post(undo_commit_handler))
+        .route("/commits-ahead", get(get_commits_ahead_handler))
         .route("/push", post(push_task_attempt_branch))
         .route("/push/force", post(force_push_task_attempt_branch))
         .route("/rebase", post(rebase_task_attempt))

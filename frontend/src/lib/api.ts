@@ -126,6 +126,17 @@ type UndoCommitResponse = {
   reverted_commit?: string;
 };
 
+type CommitDetail = {
+  hash: string;
+  message: string;
+  author_name: string;
+};
+
+type CommitsAheadResponse = {
+  commits: CommitDetail[];
+  total_count: number;
+};
+
 export class ApiError<E = unknown> extends Error {
   public status?: number;
   public error_data?: E;
@@ -881,6 +892,17 @@ export const attemptsApi = {
       }
     );
     return handleApiResponse<UndoCommitResponse>(response);
+  },
+
+  /** Get commits ahead of target branch */
+  getCommitsAhead: async (
+    attemptId: string,
+    repoId: string
+  ): Promise<CommitsAheadResponse> => {
+    const response = await makeRequest(
+      `/api/task-attempts/${attemptId}/commits-ahead?repo_id=${encodeURIComponent(repoId)}`
+    );
+    return handleApiResponse<CommitsAheadResponse>(response);
   },
 };
 
