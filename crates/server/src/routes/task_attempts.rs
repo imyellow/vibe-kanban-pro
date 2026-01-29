@@ -42,6 +42,7 @@ use executors::{
     executors::{CodingAgent, ExecutorError},
     profile::{ExecutorConfigs, ExecutorProfileId},
 };
+use git::{ConflictOp, DiffTarget, GitCliError, GitServiceError};
 use git2::BranchType;
 use serde::{Deserialize, Serialize};
 use services::services::{
@@ -50,7 +51,6 @@ use services::services::{
     },
     container::ContainerService,
     file_search::SearchQuery,
-    git::{ConflictOp, DiffTarget, GitCliError, GitServiceError},
     workspace_manager::WorkspaceManager,
 };
 use sqlx::Error as SqlxError;
@@ -792,7 +792,7 @@ pub async fn get_incremental_diff(
             // Use the last merge commit as base
             match git2::Oid::from_str(&merge_commit) {
                 Ok(oid) => (
-                    services::services::git::Commit::new(oid),
+                    git::Commit::new(oid),
                     DiffBaseType::LastMerge,
                     Some(merge_commit),
                 ),
@@ -1471,7 +1471,6 @@ pub async fn rebase_task_attempt(
         &workspace.branch.clone(),
     );
     if let Err(e) = result {
-        use services::services::git::GitServiceError;
         return match e {
             GitServiceError::MergeConflicts {
                 message,
@@ -1916,7 +1915,7 @@ pub async fn get_worktree_commits_handler(
     Extension(workspace): Extension<Workspace>,
     State(deployment): State<DeploymentImpl>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<ResponseJson<ApiResponse<Vec<services::services::git::CommitInfo>>>, ApiError> {
+) -> Result<ResponseJson<ApiResponse<Vec<git::CommitInfo>>>, ApiError> {
     let repo_id = params
         .get("repo_id")
         .ok_or_else(|| ApiError::BadRequest("Missing repo_id parameter".to_string()))?

@@ -11,13 +11,13 @@ use db::models::{
 };
 use deployment::{DeploymentError, RemoteClientNotConfigured};
 use executors::{command::CommandBuildError, executors::ExecutorError};
+use git::GitServiceError;
 use git2::Error as Git2Error;
 use local_deployment::pty::PtyError;
 use reqwest::Error as ReqwestError;
 use services::services::{
     config::{ConfigError, EditorOpenError},
     container::ContainerError,
-    git::GitServiceError,
     git_host::GitHostError,
     image::ImageError,
     project::ProjectServiceError,
@@ -119,12 +119,10 @@ impl IntoResponse for ApiError {
             },
             // Promote certain GitService errors to conflict status with concise messages
             ApiError::GitService(git_err) => match git_err {
-                services::services::git::GitServiceError::MergeConflicts { .. } => {
+                git::GitServiceError::MergeConflicts { .. } => {
                     (StatusCode::CONFLICT, "GitServiceError")
                 }
-                services::services::git::GitServiceError::RebaseInProgress => {
-                    (StatusCode::CONFLICT, "GitServiceError")
-                }
+                git::GitServiceError::RebaseInProgress => (StatusCode::CONFLICT, "GitServiceError"),
                 _ => (StatusCode::INTERNAL_SERVER_ERROR, "GitServiceError"),
             },
             ApiError::GitHost(_) => (StatusCode::INTERNAL_SERVER_ERROR, "GitHostError"),
@@ -207,10 +205,10 @@ impl IntoResponse for ApiError {
                 }
             },
             ApiError::GitService(git_err) => match git_err {
-                services::services::git::GitServiceError::MergeConflicts { message, .. } => {
+                git::GitServiceError::MergeConflicts { message, .. } => {
                     message.clone()
                 }
-                services::services::git::GitServiceError::RebaseInProgress => {
+                git::GitServiceError::RebaseInProgress => {
                     "A rebase is already in progress. Resolve conflicts or abort the rebase, then retry.".to_string()
                 }
                 _ => format!("{}: {}", error_type, self),

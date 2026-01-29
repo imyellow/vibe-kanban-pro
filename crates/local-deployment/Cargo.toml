@@ -1,6 +1,6 @@
 [package]
 name = "local-deployment"
-version = "0.0.162"
+version = "0.0.163"
 edition = "2024"
 
 [dependencies]
@@ -10,6 +10,7 @@ deployment = { path = "../deployment" }
 services = { path = "../services" }
 utils = { path = "../utils" }
 git2 = { workspace = true }
+git = { path = "../git" }
 tokio-util = { version = "0.7", features = ["io"] }
 bytes = "1.0"
 serde_json = { workspace = true }

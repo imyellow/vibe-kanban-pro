@@ -1,6 +1,6 @@
 [package]
 name = "services"
-version = "0.0.162"
+version = "0.0.163"
 edition = "2024"
 
 [features]
@@ -10,6 +10,7 @@ qa-mode = ["executors/qa-mode"]
 
 [dependencies]
 utils = { path = "../utils" }
+git = { path = "../git" }
 executors = { path = "../executors" }
 db = { path = "../db" }
 remote = { path = "../remote" }

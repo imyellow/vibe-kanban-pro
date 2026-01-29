@@ -16,10 +16,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::{
     io::{AsyncWrite, AsyncWriteExt, BufWriter},
-    sync::{Mutex as AsyncMutex, mpsc, mpsc::error::TryRecvError},
+    sync::{Mutex as AsyncMutex, mpsc},
 };
 use tokio_util::sync::CancellationToken;
-use workspace_utils::{approvals::ApprovalStatus, git};
+use workspace_utils::approvals::ApprovalStatus;
 
 use super::{slash_commands, types::OpencodeExecutorEvent};
 use crate::{
@@ -337,8 +337,7 @@ async fn run_session_inner(
 
     // Handle commit reminder if enabled
     if config.commit_reminder && !cancel.is_cancelled() {
-        let uncommitted_changes =
-            git::check_uncommitted_changes(&config.repo_context.repo_paths()).await;
+        let uncommitted_changes = config.repo_context.check_uncommitted_changes().await;
         if !uncommitted_changes.is_empty() {
             let reminder_prompt = format!(
                 "There are uncommitted changes. Please stage and commit them now with a descriptive commit message.{}",
@@ -417,26 +416,6 @@ where
 {
     let mut idle_seen = false;
     let mut session_error: Option<String> = None;
-
-    // Drain queued idles so only idles after this request count.
-    loop {
-        match control_rx.try_recv() {
-            Ok(ControlEvent::Idle) => continue,
-            Ok(ControlEvent::AuthRequired { message }) => {
-                return Err(ExecutorError::AuthRequired(message));
-            }
-            Ok(ControlEvent::SessionError { message }) => {
-                append_session_error(&mut session_error, message);
-            }
-            Ok(ControlEvent::Disconnected) if !cancel.is_cancelled() => {
-                return Err(ExecutorError::Io(io::Error::other(
-                    "OpenCode event stream disconnected before request started",
-                )));
-            }
-            Ok(ControlEvent::Disconnected) => return Ok(()),
-            Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
-        }
-    }
 
     let request_result = loop {
         tokio::select! {

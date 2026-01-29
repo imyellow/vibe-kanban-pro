@@ -11,11 +11,23 @@ use ts_rs::TS;
 use utils::diff::{Diff, DiffChangeKind, FileDiffDetails, compute_line_change_counts};
 
 mod cli;
+mod validation;
 
 use cli::{ChangeType, StatusDiffEntry, StatusDiffOptions};
-pub use cli::{GitCli, GitCliError};
+pub use cli::{GitCli, GitCliError, StatusEntry, WorktreeStatus};
+pub use utils::path::ALWAYS_SKIP_DIRS;
+pub use validation::is_valid_branch_prefix;
 
-use super::file_ranker::FileStat;
+/// Statistics for a single file based on git history
+#[derive(Clone, Debug)]
+pub struct FileStat {
+    /// Index in the commit history (0 = HEAD, 1 = parent of HEAD, ...)
+    pub last_index: usize,
+    /// Number of times this file was changed in recent commits
+    pub commit_count: u32,
+    /// Timestamp of the most recent change
+    pub last_time: DateTime<Utc>,
+}
 
 #[derive(Debug, Error)]
 pub enum GitServiceError {
@@ -1225,6 +1237,57 @@ impl GitService {
             .to_string())
     }
 
+    /// Get the list of actual commit OIDs created on this branch (from reflog)
+    /// Excludes rebases and amends, returns only the OIDs of real commits
+    fn get_branch_commit_oids(
+        repo_path: &Path,
+        branch_name: &str,
+    ) -> Result<Vec<git2::Oid>, GitServiceError> {
+        use std::process::Command;
+
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .arg("reflog")
+            .arg("show")
+            .arg(branch_name)
+            .arg("--format=%H %gd %gs")
+            .output();
+
+        let mut oids = Vec::new();
+
+        if let Ok(output) = output {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+
+                for line in stdout.lines() {
+                    // Extract OID and description
+                    let parts: Vec<&str> = line.splitn(3, ' ').collect();
+                    if parts.len() < 3 {
+                        continue;
+                    }
+
+                    let hash_str = parts[0];
+                    let description = parts[2];
+
+                    // Only include NEW commits (not amends, not rebases)
+                    if description.starts_with("commit:")
+                        && !description.contains("amend")
+                    {
+                        if let Ok(oid) = git2::Oid::from_str(hash_str) {
+                            oids.push(oid);
+                        }
+                    }
+                }
+            }
+        }
+
+        tracing::info!("Branch {} has {} real commits from reflog", branch_name, oids.len());
+        Ok(oids)
+    }
+
+    /// Try to find all commits made directly on this branch (not from rebases)
+    /// Returns the OID of the last commit before any rebase operations
     /// Get commits from the worktree branch
     /// Returns commits in reverse chronological order (newest first)
     /// Only returns commits that are unique to the worktree branch (not in base branch)
@@ -1269,34 +1332,58 @@ impl GitService {
         }
         tracing::info!("Base branch has {} total commits", base_commits.len());
 
-        // Collect only commits that are in worktree but not in base branch
-        // This shows commits unique to this worktree/task
-        let mut revwalk = repo.revwalk()?;
-        revwalk.push(worktree_commit_oid)?;
-        revwalk.hide(merge_base_oid)?; // Hide commits before the merge base
-        revwalk.set_sorting(Sort::TIME)?;
+        // Get the list of commit OIDs actually created on this branch
+        let branch_commit_oids = Self::get_branch_commit_oids(repo_path, worktree_branch)?;
 
         let mut commits = Vec::new();
-        for oid in revwalk {
-            let oid = oid?;
-            let commit = repo.find_commit(oid)?;
 
-            // A commit is merged if it's reachable from base branch HEAD
-            let is_merged = base_commits.contains(&oid);
+        if branch_commit_oids.is_empty() {
+            tracing::info!("No real commits on this branch");
+        } else {
+            // For each commit on the worktree branch, check if an equivalent commit exists on base branch
+            // We check equivalence by comparing the commit subject (first line of message)
+            // This handles rebases where the OID changes but the commit content is the same
 
-            commits.push(CommitInfo {
-                hash: oid.to_string(),
-                short_hash: format!("{:.7}", oid),
-                message: commit.message().unwrap_or("").to_string(),
-                author_name: commit.author().name().unwrap_or("").to_string(),
-                author_email: commit.author().email().unwrap_or("").to_string(),
-                timestamp: DateTime::from_timestamp(commit.time().seconds(), 0)
-                    .unwrap_or_else(|| Utc::now()),
-                is_merged,
-            });
+            // First, collect all commit subjects from the base branch for quick lookup
+            let mut base_commit_subjects = std::collections::HashSet::new();
+            let mut base_revwalk = repo.revwalk()?;
+            base_revwalk.push(base_commit_oid)?;
+            for oid in base_revwalk {
+                if let Ok(oid) = oid {
+                    if let Ok(commit) = repo.find_commit(oid) {
+                        if let Some(summary) = commit.summary() {
+                            base_commit_subjects.insert(summary.to_string());
+                        }
+                    }
+                }
+            }
+
+            // Only return commits that are in the branch_commit_oids list
+            // This ensures we only show commits actually created on this branch
+            for oid in branch_commit_oids {
+                let commit = repo.find_commit(oid)?;
+
+                // Check if a commit with the same subject exists in the base branch
+                // This indicates the commit (or an equivalent commit after rebase) has been merged
+                let is_merged = commit
+                    .summary()
+                    .map(|summary| base_commit_subjects.contains(summary))
+                    .unwrap_or(false);
+
+                commits.push(CommitInfo {
+                    hash: oid.to_string(),
+                    short_hash: format!("{:.7}", oid),
+                    message: commit.message().unwrap_or("").to_string(),
+                    author_name: commit.author().name().unwrap_or("").to_string(),
+                    author_email: commit.author().email().unwrap_or("").to_string(),
+                    timestamp: DateTime::from_timestamp(commit.time().seconds(), 0)
+                        .unwrap_or_else(|| Utc::now()),
+                    is_merged,
+                });
+            }
         }
 
-        tracing::info!("Found {} worktree-specific commits", commits.len());
+        tracing::info!("Found {} commits", commits.len());
         Ok(commits)
     }
 
@@ -1332,15 +1419,22 @@ impl GitService {
         Ok((ahead, behind))
     }
 
+    /// Return the full worktree status including all entries
+    pub fn get_worktree_status(
+        &self,
+        worktree_path: &Path,
+    ) -> Result<WorktreeStatus, GitServiceError> {
+        let cli = GitCli::new();
+        cli.get_worktree_status(worktree_path)
+            .map_err(|e| GitServiceError::InvalidRepository(format!("git status failed: {e}")))
+    }
+
     /// Return (uncommitted_tracked_changes, untracked_files) counts in worktree
     pub fn get_worktree_change_counts(
         &self,
         worktree_path: &Path,
     ) -> Result<(usize, usize), GitServiceError> {
-        let cli = GitCli::new();
-        let st = cli
-            .get_worktree_status(worktree_path)
-            .map_err(|e| GitServiceError::InvalidRepository(format!("git status failed: {e}")))?;
+        let st = self.get_worktree_status(worktree_path)?;
         Ok((st.uncommitted_tracked, st.untracked))
     }
 
@@ -1848,7 +1942,7 @@ impl GitService {
     ) -> Result<String, GitServiceError> {
         let cli = GitCli::new();
         cli.get_remote_url(repo_path, remote_name)
-            .map_err(GitServiceError::GitCLI)
+            .map_err(GitServiceError::from)
     }
 
     pub fn get_default_remote(&self, repo_path: &Path) -> Result<GitRemote, GitServiceError> {
@@ -1875,7 +1969,7 @@ impl GitService {
         let git_cli = GitCli::new();
         git_cli
             .check_remote_branch_exists(repo_path, remote_url, branch_name)
-            .map_err(GitServiceError::GitCLI)
+            .map_err(GitServiceError::from)
     }
 
     pub fn fetch_branch(
@@ -1888,7 +1982,7 @@ impl GitService {
         let refspec = format!("+refs/heads/{branch_name}:refs/heads/{branch_name}");
         git_cli
             .fetch_with_refspec(repo_path, remote_url, &refspec)
-            .map_err(GitServiceError::GitCLI)
+            .map_err(GitServiceError::from)
     }
 
     pub fn resolve_remote_for_branch(
