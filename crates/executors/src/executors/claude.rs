@@ -124,40 +124,35 @@ impl ClaudeCode {
             "--disallowedTools=AskUserQuestion",
         ]);
 
-        // If profile has env or enabled_plugins configuration, skip user-level settings and pass via --settings
-        // This ensures profile settings take precedence over ~/.claude/settings.json
+        // Only pass --setting-sources and --settings when env is defined
+        // This ensures we don't override user settings unnecessarily
         let has_env = self.cmd.env.as_ref().map_or(false, |e| !e.is_empty());
 
-        // Load enabled_plugins from ~/.claude/settings.json only when using direct Claude Code CLI (not router)
-        let enabled_plugins = if self.claude_code_router.unwrap_or(false) {
-            None
-        } else {
-            (|| {
-                let home = std::env::var("HOME").ok()?;
-                let settings_path = PathBuf::from(&home).join(".claude").join("settings.json");
-                let content = std::fs::read_to_string(&settings_path).ok()?;
-                let settings: serde_json::Value = serde_json::from_str(&content).ok()?;
-                settings
-                    .get("enabledPlugins")?
-                    .as_object()
-                    .map(|obj| obj.clone())
-            })()
-        };
-
-        let has_plugins = enabled_plugins.as_ref().map_or(false, |p| !p.is_empty());
-
-        if has_env || has_plugins {
+        if has_env {
             // Skip user-level settings (~/.claude/settings.json) to avoid conflicts
             builder = builder.extend_params(["--setting-sources", "project"]);
 
             let mut settings_map = serde_json::Map::new();
+            settings_map.insert("env".to_string(), serde_json::json!(self.cmd.env));
 
-            if has_env {
-                settings_map.insert("env".to_string(), serde_json::json!(self.cmd.env));
-            }
+            // Load enabled_plugins from ~/.claude/settings.json only when using direct Claude Code CLI (not router)
+            if !self.claude_code_router.unwrap_or(false) {
+                let enabled_plugins = (|| {
+                    let home = std::env::var("HOME").ok()?;
+                    let settings_path = PathBuf::from(&home).join(".claude").join("settings.json");
+                    let content = std::fs::read_to_string(&settings_path).ok()?;
+                    let settings: serde_json::Value = serde_json::from_str(&content).ok()?;
+                    settings
+                        .get("enabledPlugins")?
+                        .as_object()
+                        .map(|obj| obj.clone())
+                })();
 
-            if has_plugins {
-                settings_map.insert("enabledPlugins".to_string(), serde_json::json!(enabled_plugins));
+                if let Some(plugins) = enabled_plugins {
+                    if !plugins.is_empty() {
+                        settings_map.insert("enabledPlugins".to_string(), serde_json::json!(plugins));
+                    }
+                }
             }
 
             let settings_json = serde_json::Value::Object(settings_map);
