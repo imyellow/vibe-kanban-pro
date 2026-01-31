@@ -161,7 +161,7 @@ impl Task {
 
 FROM tasks t
 WHERE t.project_id = $1
-ORDER BY t.created_at DESC"#,
+ORDER BY t.updated_at DESC"#,
             project_id
         )
         .fetch_all(pool)
@@ -247,7 +247,7 @@ ORDER BY t.created_at DESC"#,
         sqlx::query_as!(
             Task,
             r#"UPDATE tasks
-               SET title = $3, description = $4, status = $5, parent_workspace_id = $6
+               SET title = $3, description = $4, status = $5, parent_workspace_id = $6, updated_at = CURRENT_TIMESTAMP
                WHERE id = $1 AND project_id = $2
                RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
             id,
