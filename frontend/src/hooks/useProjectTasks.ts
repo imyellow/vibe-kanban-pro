@@ -49,15 +49,15 @@ export const useProjectTasks = (projectId: string): UseProjectTasksResult => {
 
     const sorted = Object.values(merged).sort(
       (a, b) =>
-        new Date(b.created_at as string).getTime() -
-        new Date(a.created_at as string).getTime()
+        new Date(b.updated_at as string).getTime() -
+        new Date(a.updated_at as string).getTime()
     );
 
     (Object.values(byStatus) as TaskWithAttemptStatus[][]).forEach((list) => {
       list.sort(
         (a, b) =>
-          new Date(b.created_at as string).getTime() -
-          new Date(a.created_at as string).getTime()
+          new Date(b.updated_at as string).getTime() -
+          new Date(a.updated_at as string).getTime()
       );
     });
 

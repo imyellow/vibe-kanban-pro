@@ -245,12 +245,16 @@ impl Workspace {
     /// Update the workspace's updated_at timestamp to prevent cleanup.
     /// Call this when the workspace is accessed (e.g., opened in editor).
     pub async fn touch(pool: &SqlitePool, workspace_id: Uuid) -> Result<(), sqlx::Error> {
+        let now = Utc::now();
+        // Update workspace
         sqlx::query!(
-            "UPDATE workspaces SET updated_at = datetime('now', 'subsec') WHERE id = ?",
+            "UPDATE workspaces SET updated_at = $1 WHERE id = $2",
+            now,
             workspace_id
         )
         .execute(pool)
         .await?;
+
         Ok(())
     }
 
@@ -377,7 +381,7 @@ impl Workspace {
         id: Uuid,
         task_id: Uuid,
     ) -> Result<Self, WorkspaceError> {
-        Ok(sqlx::query_as!(
+        let workspace = sqlx::query_as!(
             Workspace,
             r#"INSERT INTO workspaces (id, task_id, container_ref, branch, agent_working_dir, setup_completed_at)
                VALUES ($1, $2, $3, $4, $5, $6)
@@ -390,7 +394,17 @@ impl Workspace {
             Option::<DateTime<Utc>>::None
         )
         .fetch_one(pool)
-        .await?)
+        .await?;
+
+        // Update parent task timestamp
+        sqlx::query!(
+            "UPDATE tasks SET updated_at = datetime('now') WHERE id = ?",
+            task_id
+        )
+        .execute(pool)
+        .await?;
+
+        Ok(workspace)
     }
 
     pub async fn update_branch_name(

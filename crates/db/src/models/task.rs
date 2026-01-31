@@ -201,6 +201,18 @@ ORDER BY t.updated_at DESC"#,
         .await
     }
 
+    pub async fn touch(pool: &SqlitePool, id: Uuid) -> Result<(), sqlx::Error> {
+        let now = Utc::now();
+        sqlx::query!(
+            "UPDATE tasks SET updated_at = $1 WHERE id = $2",
+            now,
+            id
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn find_by_rowid(pool: &SqlitePool, rowid: i64) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
@@ -247,7 +259,7 @@ ORDER BY t.updated_at DESC"#,
         sqlx::query_as!(
             Task,
             r#"UPDATE tasks
-               SET title = $3, description = $4, status = $5, parent_workspace_id = $6, updated_at = CURRENT_TIMESTAMP
+               SET title = $3, description = $4, status = $5, parent_workspace_id = $6
                WHERE id = $1 AND project_id = $2
                RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
             id,

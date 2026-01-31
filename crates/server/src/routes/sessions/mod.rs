@@ -12,6 +12,7 @@ use db::models::{
     execution_process::{ExecutionProcess, ExecutionProcessRunReason},
     scratch::{Scratch, ScratchType},
     session::{CreateSession, Session, SessionError},
+    task::Task,
     workspace::{Workspace, WorkspaceError},
     workspace_repo::WorkspaceRepo,
 };
@@ -66,7 +67,7 @@ pub async fn create_session(
     let pool = &deployment.db().pool;
 
     // Verify workspace exists
-    let _workspace = Workspace::find_by_id(pool, payload.workspace_id)
+    let workspace = Workspace::find_by_id(pool, payload.workspace_id)
         .await?
         .ok_or(ApiError::Workspace(WorkspaceError::ValidationError(
             "Workspace not found".to_string(),
@@ -81,6 +82,8 @@ pub async fn create_session(
         payload.workspace_id,
     )
     .await?;
+
+    Task::touch(pool, workspace.task_id).await?;
 
     Ok(ResponseJson(ApiResponse::success(session)))
 }
@@ -227,6 +230,8 @@ pub async fn follow_up(
             e
         );
     }
+
+    Task::touch(pool, workspace.task_id).await?;
 
     Ok(ResponseJson(ApiResponse::success(execution_process)))
 }

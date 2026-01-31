@@ -186,6 +186,7 @@ impl EventService {
                                     return;
                                 }
                                 (HookTables::Tasks, _) => {
+                                    tracing::info!("Hook: Task update detected for rowid {}", rowid);
                                     match Task::find_by_rowid(&db.pool, rowid).await {
                                         Ok(Some(task)) => RecordTypes::Task(task),
                                         Ok(None) => RecordTypes::DeletedTask {
@@ -281,6 +282,7 @@ impl EventService {
                                         && let Some(task_with_status) =
                                             task_list.into_iter().find(|t| t.id == task.id)
                                     {
+                                        tracing::info!("Hook: Pushing patch for task {}", task.id);
                                         let patch = match hook.operation {
                                             SqliteOperation::Insert => {
                                                 task_patch::add(&task_with_status)
